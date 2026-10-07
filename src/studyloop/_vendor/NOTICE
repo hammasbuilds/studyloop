@@ -1,0 +1,9 @@
+Vendored, read-only copies. The originals are sibling repos owned by other sessions and were never edited.
+
+urdunlp/   from D:\github\urdu-nlp-toolkit src/urdunlp (commit 93e9fb9); MIT code + CC BY-SA data, see urdunlp/LICENSE and LICENSE-DATA
+bm25.py    from D:\github\agent-memory src/agent_memory/bm25.py (commit fe230f4); MIT
+
+Path dependencies (not copied): book-to-skill (commit bf0f2d8), web-to-markdown (commit 8ab0b4b).
+Re-implemented with credit: quote location from rag-forge generate/citations.py (commit ab5c97b); BKT filter from knowledge-tracing kt/models/bkt.py predict_skills (commit 4524d65).
+
+Local patch to the vendored urdunlp: _channel.py and langid.py call resources.files(__package__) instead of resources.files("urdunlp"), so the data files resolve inside this package. Nothing else changed.

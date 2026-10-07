@@ -1,0 +1,48 @@
+Input : The Chemical History of a Candle (33,688 words, markdown)
+Output: 6 chapters, 26 topics, 364 retrieval passages
+
+Course outline (first chapter)
+  Lecture I: The Flame > The Flame  [1547 words]  concepts: coal mines, moulds, manufacture, dips
+  Lecture I: The Flame > Its Sources  [633 words]  concepts: specimens, lamp-glass, fine, solid substance
+  Lecture I: The Flame > Structure  [690 words]  concepts: current, melt, horizontal, edge
+  Lecture I: The Flame > Mobility  [918 words]  concepts: capillary attraction, cane, towel, finger
+  Lecture I: The Flame > Brightness  [1907 words]  concepts: tongues, flame upwards, shadow, snapdragon
+
+Ask the book
+  en       What is capillary attraction?
+           -> line 29, chars 15635-15874, Mobility: "There is a beautiful point about that—capillary attraction[4]. “Capillary attraction!” you..."
+  en       Why does a candle burn?
+           -> line 261, chars 147107-147216, Carbon or Charcoal: "You remember that when a candle burns badly, it produces smoke; but if it is burning well,..."
+  en       What is hydrogen?
+           -> line 127, chars 77650-77782, A Compound: "This is hydrogen—a body classed among those things which in Chemistry we call elements, be..."
+  ur       موم بتی کیوں جلتی ہے؟
+           -> line 63, chars 38175-38484, Brightness of the Flame: "We have the case of the combustion of a candle; we have the case of a candle being put out..."
+  roman-ur pani kaise banta hai
+           -> line 95, chars 59761-59855, Products: Water from the Combustion: "Here, again [holding another bottle], is some water produced by the combustion of an oil-l..."
+  ur       ہائیڈروجن کیا ہے؟
+           -> line 127, chars 77650-77782, A Compound: "This is hydrogen—a body classed among those things which in Chemistry we call elements, be..."
+  en       Who won the 1998 world cup?
+           -> not in the book
+  en       How do I train a neural network?
+           -> not in the book
+  en       What is the capital of France?
+           -> not in the book
+  6 of 9 answered, every quote verified against the markdown
+
+Quiz and mastery (topic: Hydrogen, answering 8 of 12 correctly on purpose)
+  question pool: cloze 7, mcq 7, tf 7
+  answer  1 mcq   right  P(known) 0.580  learning
+  answer  2 cloze right  P(known) 0.892  getting there
+  answer  3 tf    wrong  P(known) 0.808  getting there
+  answer  4 mcq   right  P(known) 0.926  getting there
+  answer  5 cloze right  P(known) 0.987  getting there
+  answer  6 tf    wrong  P(known) 0.974  getting there
+  answer  7 mcq   right  P(known) 0.991  getting there
+  answer  8 cloze right  P(known) 0.999  mastered
+  answer  9 tf    wrong  P(known) 0.997  getting there
+  answer 10 mcq   right  P(known) 0.999  getting there
+  answer 11 cloze right  P(known) 1.000  mastered
+  answer 12 tf    wrong  P(known) 1.000  getting there
+  next review in 0.01 days; review list:
+    The Flame: next new topic
+    Hydrogen: still shaky
