@@ -187,3 +187,15 @@ scripts/         ui_tour.py, xss_check.py, ask_check.py, make_icon.py, prepare_s
 ```
 
 Licence: MIT for the code. The sample text is in the public domain; the vendored urdunlp keeps its own MIT licence and CC BY-SA data licence in `src/studyloop/_vendor/urdunlp/`.
+
+## Interaction
+
+Every control gives feedback: buttons lift, press down with a spring and ripple from the pointer, and show a spinner
+while a request runs; cards lift with a pointer spotlight (stat and book cards also tilt a few degrees); inputs get an
+animated focus ring and a green edge once filled; lists enter with a staggered rise; KPI numbers count up and bars
+grow from zero; toasts slide in. Two delight moments: a confetti burst on a correct answer (bigger at mastery or a
+perfect round) and a gentle shake on a wrong one. Everything honours `prefers-reduced-motion`. Research and the numbers
+used are in [docs/MOTION.md](docs/MOTION.md).
+
+![Answer feedback](docs/screenshots/19-motion-answer-feedback.png)
+![Button loading](docs/screenshots/20-motion-button-loading.png)

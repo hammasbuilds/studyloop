@@ -17,7 +17,7 @@ async function api(path, opts = {}) {
   return data;
 }
 function toast(msg) {
-  const t = document.getElementById("toast"); t.textContent = msg; t.classList.add("show");
+  const t = document.getElementById("toast"); t.classList.remove("show"); void t.offsetWidth; t.textContent = msg; t.classList.add("show");
   clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove("show"), 3200);
 }
 const pct = (x) => Math.round((x || 0) * 100);
@@ -215,7 +215,7 @@ async function trySubmit(q, topic, val, out) {
     document.getElementById("tryfb").innerHTML = `<div class="feedback ${r.correct ? "good" : "bad"} anim" style="margin-top:10px"><div class="row" style="flex-wrap:nowrap">${ringSvg(r.mastery.p_known * 100, 56, "knowledge")}<div><strong>${r.correct ? "Correct!" : "Not quite."}</strong>
       ${r.kind === "tf" ? esc(verdict) : r.correct ? "" : `The answer is <strong>${esc(r.answer)}</strong>.`}<div class="small">Knowledge of this topic: ${esc(r.mastery.level)}</div></div></div>
       <div class="quote" style="margin-top:8px">${esc(r.quote)}</div><div class="where">Book line ${r.line} · characters ${r.start}&ndash;${r.end} · <a href="#/topic/${topic.id}?hl=${r.start}-${r.end}">find in text &rarr;</a></div></div>`;
-    animateRings(out);
+    animateRings(out); fx.answer(r);
   } catch (e) { toast(e.message); }
 }
 async function wireHero(book) {
@@ -230,7 +230,7 @@ async function wireHero(book) {
   };
   const run = async (record) => {
     const text = ta.value.trim(); if (!text) return;
-    const my = ++seq; out.innerHTML = skeleton(2).replace('<div class="skel h1"></div>', ""); time.innerHTML = "";
+    const my = ++seq, rb = document.getElementById("tryrun"); fx.busy(rb, true); out.innerHTML = skeleton(2).replace('<div class="skel h1"></div>', ""); time.innerHTML = "";
     const t0 = performance.now();
     try {
       if (mode === "ask") {
@@ -256,6 +256,7 @@ async function wireHero(book) {
         } else out.querySelectorAll(".opt").forEach((b) => (b.onclick = () => trySubmit(q, topic, b.dataset.o, out)));
       }
     } catch (e) { if (my === seq) out.innerHTML = `<div class="answer-box none">${esc(e.message)}</div>`; }
+    finally { fx.busy(rb, false); }
   };
   box.querySelectorAll(".seg button").forEach((b) => (b.onclick = () => {
     if (b.dataset.mode === mode) return; setMode(b.dataset.mode);
@@ -495,7 +496,7 @@ async function submitAnswer(q, val) {
   document.querySelectorAll("#inputs button, #inputs input").forEach((e) => (e.disabled = true));
   try {
     const r = await api("/quiz/answer", { method: "POST", json: { question_id: q.id, response: val } });
-    z.done++; if (r.correct) z.right++; z.last = r;
+    z.done++; if (r.correct) z.right++; z.last = r; fx.answer(r);
     document.querySelectorAll(".opt").forEach((b) => { if (b.dataset.o.toLowerCase() === r.answer.toLowerCase()) b.classList.add("right"); else if (b.dataset.o === val) b.classList.add("wrong"); });
     const verdict = r.kind === "tf" ? (r.statement_is_true ? "This statement is true: it is in the book." : "This statement is false: the book says otherwise.") : "";
     document.getElementById("fb").innerHTML = `<div class="feedback ${r.correct ? "good" : "bad"}"><strong>${r.correct ? "Correct." : "Not quite."}</strong>
@@ -516,6 +517,7 @@ async function quizDone() {
     <p><button class="btn" id="again">Another round</button> ${z.topic.next ? `<a class="btn secondary" href="#/topic/${z.topic.next.id}?quiz=1">Next topic</a>` : ""}</p>
     ${nxt.length ? `<h3>Review next</h3>${nxt.map((r) => `<div class="li"><div class="main"><a href="#/topic/${r.topic_id}?quiz=1">${esc(r.topic)}</a><div class="small muted">${esc(r.reason)}</div></div></div>`).join("")}` : ""}`;
   document.getElementById("again").onclick = () => startQuiz(z.topic);
+  if (z.right === z.done && z.done > 0) fx.burstAt(box.querySelector("h2"), 60, 1.6);
 }
 document.addEventListener("keydown", (e) => {
   const z = state.quiz; if (!z || e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
@@ -544,10 +546,11 @@ route(/^\/ask(?:\/(\d+))?$/, "ask", async (m, params) => {
   const input = document.getElementById("q");
   const run = async (text) => {
     if (!text.trim()) return; input.value = text;
-    const res = document.getElementById("result"); res.innerHTML = `<p class="muted"><span class="spinner"></span> Searching the book…</p>`;
+    const res = document.getElementById("result"), gb = document.getElementById("go"); res.innerHTML = `<p class="muted"><span class="spinner"></span> Searching the book…</p>`; fx.busy(gb, true);
     try { const r = await api("/ask", { method: "POST", json: { book_id: bookId, question: text } }); res.innerHTML = answerHtml(r);
       document.getElementById("hist").innerHTML = histHtml(await api("/history?book_id=" + bookId + "&limit=8")); }
-    catch (e) { res.innerHTML = `<div class="card">${esc(e.message)}</div>`; }
+    catch (e) { res.innerHTML = `<div class="card">${esc(e.message)}</div>`; fx.shake(res); }
+    finally { fx.busy(gb, false); }
   };
   document.getElementById("askf").onsubmit = (e) => { e.preventDefault(); run(input.value); };
   document.querySelectorAll("[data-q]").forEach((c) => (c.onclick = () => run(c.dataset.q)));
