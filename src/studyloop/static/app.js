@@ -545,7 +545,7 @@ async function startQuiz(t) {
 }
 function showQuestion() {
   const z = state.quiz, box = document.getElementById("quizbox");
-  if (!z) return;
+  if (!z || !box) return; // the learner left the topic page while the questions were loading
   if (z.i >= z.qs.length) return quizDone();
   const q = z.qs[z.i];
   const kinds = { cloze: "Fill in the blank", mcq: "Choose the missing word", tf: "True or false?" };
@@ -669,7 +669,7 @@ route(/^\/memory$/, "memory", async () => {
   const [notes, hist, sess, settings, llm] = await Promise.all([api("/notes"), api("/history?limit=30"), api("/memory/sessions"), api("/settings"), api("/llm")]);
   $app.innerHTML = `<h1>Memory</h1>
     <div class="card" style="margin-bottom:16px"><div class="row"><input type="text" id="mq" placeholder="Search your notes and past questions…" aria-label="Search memory" style="flex:1"><button class="btn" id="msearch">Search</button></div><div id="mres"></div></div>
-    <div class="grid cols-2"><section class="card"><h2>Notes (${notes.length})</h2>${notes.length ? notes.map((n) => `<div class="cite"><div>${esc(n.text).replace(/\n/g, "<br>")}</div><div class="where">${esc(n.book || "")} › <a href="#/topic/${n.topic_id}">${esc(n.topic || "book")}</a> · ${dt(n.updated)}</div></div>`).join("") : '<p class="muted">Notes you write on a topic page show up here. Open a book from the <a href="#/library">Library</a> to start.</p>'}</section>
+    <div class="grid cols-wide"><section class="card"><h2>Notes (${notes.length})</h2>${notes.length ? notes.map((n) => `<div class="cite"><div>${esc(n.text).replace(/\n/g, "<br>")}</div><div class="where">${esc(n.book || "")} › <a href="#/topic/${n.topic_id}">${esc(n.topic || "book")}</a> · ${dt(n.updated)}</div></div>`).join("") : '<p class="muted">Notes you write on a topic page show up here. Open a book from the <a href="#/library">Library</a> to start.</p>'}</section>
     <section class="card"><h2>Question history</h2>${histHtml(hist)}</section>
     <section class="card"><h2>Sessions</h2>${sess.map((s) => `<div class="li"><div class="main">${dt(s.started)}</div><span class="small muted">${s.questions} questions · ${s.answers} quiz answers</span></div>`).join("") || '<p class="muted">None yet.</p>'}</section>
     <section class="card stack"><h2>Settings</h2>
