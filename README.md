@@ -4,7 +4,13 @@ Turn any textbook or web page into a personal tutor that runs on your own comput
 
 You add a PDF, a markdown or text file, or a web address. StudyLoop converts it to clean notes, builds a navigable course (chapters, topics, key concepts), answers questions using only the book and shows exactly where every quote sits in the source, quizzes you topic by topic, tracks what you know with Bayesian Knowledge Tracing, tells you what to review next, and remembers your progress, notes and questions between sessions. Questions can be asked in English, Urdu or Roman Urdu.
 
-![Dashboard](docs/screenshots/01-dashboard.png)
+![Home: the try-it panel, answered live by the app](docs/screenshots/01-dashboard.png)
+
+The home page has a live **try-it panel**: type a question about the book (English, Urdu or Roman Urdu) or a topic to be quizzed on, and the verified answer with its quote and location, or a generated quiz question, comes back from the app's own API with the time it took. Look: warm paper-cream (light) or ink-navy (dark), indigo/violet with coral and amber accents, Nunito headings, Inter body, progress rings for mastery.
+
+| Quiz mode | Urdu question |
+|---|---|
+| ![](docs/screenshots/16-try-it-quiz.png) | ![](docs/screenshots/17-try-it-urdu.png) |
 
 | | |
 |---|---|
@@ -37,7 +43,7 @@ With a model, answers are written in prose and quizzes can add model-written que
 Tests and checks:
 
 ```
-uv run pytest -q            # 149 tests
+uv run pytest -q            # 150 tests
 uv run ruff check .
 uv run python demo.py       # offline end-to-end demo (output below)
 uv run python scripts/ask_check.py
@@ -122,7 +128,7 @@ Every number below is printed by the code in this repository.
 | Quiz pool for the sample (rule-based, all 26 topics) | 381 questions: 125 cloze, 125 multiple choice, 131 true/false; 3 to 21 per topic, none without |
 | Ask, on-book (26 questions, "What does the book say about X?", X = each topic's top concept) | 26 answered, 26 with a cited quote containing the concept's words. This is easy by construction: the question is built from the text. |
 | Ask, off-book (24 questions the book cannot answer, `scripts/ask_check.py`) | 24 abstained. Before the phrase check one of the first 20 was answered ("What is the boiling point of mercury?"); the other 4 were added after the fix, so 24/24 is partly tuned and partly unseen. |
-| Tests | 149 passing, ruff clean |
+| Tests | 150 passing, ruff clean |
 | UI tour in a real browser | uploads a markdown file, a PDF and a web page; plays quizzes; asks in three languages; opens a quote; changes settings; deletes a book. No console error or failed request. |
 
 ## Security (2026-10 review, details in [docs/REVIEW.md](docs/REVIEW.md))
@@ -176,7 +182,7 @@ src/studyloop/
   static/        the single-page app (HTML, CSS, JS; no build step)
   sample/        Faraday, The Chemical History of a Candle (public domain)
   _vendor/       read-only copies, see NOTICE
-tests/           149 tests: units for every module, API tests for every endpoint
+tests/           150 tests: units for every module, API tests for every endpoint
 scripts/         ui_tour.py, xss_check.py, ask_check.py, make_icon.py, prepare_sample.py
 ```
 

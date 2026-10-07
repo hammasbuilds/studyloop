@@ -150,7 +150,19 @@ with sync_playwright() as p:
 
     page.goto(BASE + "/#/")
     page.wait_for_selector(".book-card")
+    page.wait_for_selector("#tryout .anim")  # the try-it panel is answered live by the app's own API
+    page.wait_for_timeout(1300)  # let the progress rings finish drawing
     page.screenshot(path=str(OUT / "01-dashboard.png"))
+    page.click('.chip[data-i="2"]')  # "Quiz me on hydrogen"
+    page.wait_for_selector("#tryout .opt")
+    page.click("#tryout .opt >> nth=0")
+    page.wait_for_selector("#tryfb .feedback")
+    page.wait_for_timeout(1200)
+    page.screenshot(path=str(OUT / "16-try-it-quiz.png"), clip={"x": 0, "y": 330, "width": 1280, "height": 570})
+    page.click('.chip[data-i="1"]')  # the Urdu question
+    page.wait_for_selector("#tryout .verified")
+    page.wait_for_timeout(700)
+    page.screenshot(path=str(OUT / "17-try-it-urdu.png"), clip={"x": 0, "y": 330, "width": 1280, "height": 480})
     page.goto(BASE + "/#/review")
     page.wait_for_selector(".sched")
     page.screenshot(path=str(OUT / "12-review.png"))
@@ -166,9 +178,12 @@ with sync_playwright() as p:
 
     page.goto(BASE + "/#/")
     page.wait_for_selector(".book-card")
+    page.wait_for_selector("#tryout .anim")
     page.click("#theme")
-    page.wait_for_timeout(300)
+    page.evaluate("document.getElementById('toast').classList.remove('show')")
+    page.wait_for_timeout(1300)
     page.screenshot(path=str(OUT / "14-dashboard-dark.png"))
+    page.screenshot(path=str(OUT / "18-dashboard-dark-full.png"), full_page=True)
     page.set_viewport_size({"width": 390, "height": 800})
     page.goto(BASE + "/#/book/1")
     page.wait_for_selector(".topic-row")

@@ -205,7 +205,7 @@ def test_settings_roundtrip_and_validation(client):
 
 def test_use_llm_setting_disables_the_model(client, monkeypatch):
     seen = []
-    monkeypatch.setattr(ask, "ask", lambda con, bid, q, use_llm=True, client=None: seen.append(use_llm) or {"ok": 1})
+    monkeypatch.setattr(ask, "ask", lambda con, bid, q, use_llm=True, client=None, log=True: seen.append(use_llm) or {"ok": 1})
     bid = _upload(client).json()["id"]
     client.put("/api/settings", json={"use_llm": False})
     client.post("/api/ask", json={"book_id": bid, "question": "What is a levee?", "use_llm": True})
@@ -283,3 +283,13 @@ def test_import_interrupted_by_restart_is_marked_failed(db_path):
     c = TestClient(create_app(db_path, sync_import=True))
     b = c.get("/api/books").json()[0]
     assert b["status"] == "error" and "restart" in b["error"]
+
+
+def test_ask_preview_is_not_logged(client):
+    """The home page's try-it panel asks with log=false: answered live, but not written to the history."""
+    bid = client.post("/api/books/sample").json()["id"]
+    r = client.post("/api/ask", json={"book_id": bid, "question": "What is hydrogen?", "log": False})
+    assert r.status_code == 200 and r.json()["answered"]
+    assert client.get(f"/api/history?book_id={bid}").json() == []
+    client.post("/api/ask", json={"book_id": bid, "question": "What is hydrogen?"})
+    assert len(client.get(f"/api/history?book_id={bid}").json()) == 1

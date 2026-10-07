@@ -31,6 +31,7 @@ class AskBody(BaseModel):
     book_id: int
     question: str = Field(min_length=1, max_length=1000)
     use_llm: bool = True
+    log: bool = True  # False: a preview (the home page's try-it panel) that is not recorded as a question
 
 
 class AnswerBody(BaseModel):
@@ -389,7 +390,7 @@ def create_app(
         if b["status"] != "ready":
             raise HTTPException(409, "that book is still being processed")
         use = body.use_llm and memory.settings(con)["use_llm"]
-        return ask_mod.ask(con, body.book_id, body.question, use_llm=use)
+        return ask_mod.ask(con, body.book_id, body.question, use_llm=use, log=body.log)
 
     # ---- mastery & review --------------------------------------------------------------------
 

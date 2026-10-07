@@ -33,6 +33,17 @@ def _open_when_ready(url: str) -> None:
     webbrowser.open(url)
 
 
+def _warm_up() -> None:
+    """Load the Urdu / Roman Urdu tables now, so the first Urdu question is not the slow one."""
+    from . import urdu
+
+    for q in ("موم بتی کیسے جلتی ہے؟", "pani kaise banta hai", "what is a flame"):
+        try:
+            urdu.analyse(q, urdu.book_vocab(["candle", "burn", "water", "flame"]))
+        except Exception:  # noqa: BLE001 - a warm-up must never stop the server
+            return
+
+
 def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(prog="studyloop", description="Your textbooks, as a personal tutor.")
     ap.add_argument("--host", default="127.0.0.1")
@@ -50,6 +61,7 @@ def main(argv: list[str] | None = None) -> None:
     finally:
         con.close()
     port = free_port(a.port, a.host)
+    threading.Thread(target=_warm_up, daemon=True).start()
     url = f"http://{a.host}:{port}"
     print(f"StudyLoop on {url}  (data: {path})  Ctrl+C to stop")
     if not a.no_browser:

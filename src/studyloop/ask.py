@@ -238,7 +238,8 @@ def llm_answer(idx: Index, question: str, terms: list[str], client) -> dict | No
 
 
 def ask(
-    con: sqlite3.Connection, book_id: int, question: str, *, use_llm: bool = True, client=None
+    con: sqlite3.Connection, book_id: int, question: str, *, use_llm: bool = True, client=None,
+    log: bool = True,
 ) -> dict:
     question = question.strip()
     idx = get_index(con, book_id)
@@ -275,7 +276,8 @@ def ask(
                     result["message"] = f"model unavailable ({exc}); showing the extractive answer"
                 if out is not None and out["supported"] is False:
                     result["message"] = "The book does not say. The model found no support in the passages."
-                    _log(con, book_id, result)
+                    if log:
+                        _log(con, book_id, result)
                     return result
                 if out and out["citations"]:
                     result.update(
@@ -292,7 +294,8 @@ def ask(
                     answered=True, mode="extractive", citations=cites,
                     answer=" ".join(f"{c['quote']} [{c['n']}]" for c in cites),
                 )
-    _log(con, book_id, result)
+    if log:
+        _log(con, book_id, result)
     return result
 
 
