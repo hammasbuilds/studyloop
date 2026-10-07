@@ -5,7 +5,7 @@ Hostile pass over StudyLoop. Severity: H high, M medium, L low.
 ## Found and fixed
 | Sev | Area | Finding | Fix / test |
 |---|---|---|---|
-| H | SSRF | URL import used web2md's `urlopen`: `http://127.0.0.1:<port>/`, `169.254.169.254`, redirects to them, DNS names resolving to private IPs all fetched | `net.py` (resolve, check every address, connect to checked IP, re-check redirects, caps); 26 parametrised URL tests plus a real loopback server never contacted |
+| H | SSRF | URL import used web2md's `urlopen`: `http://127.0.0.1:<port>/`, `169.254.169.254`, redirects to them, DNS names resolving to private IPs all fetched | `net.py` (resolve, check every address, connect to checked IP, re-check redirects, caps); 22 parametrised URL tests plus a real loopback server never contacted |
 | H | CSRF / rebinding | No Host or Origin check: any website could POST `url=` or `file` to localhost, and a rebinding page could read all data | Host allow-list + Origin / Sec-Fetch-Site check on writes (403) |
 | M | DoS | `await file.read()` loaded any upload into memory before the size check | chunked read, 413 over 60 MB |
 | M | DoS | PDF page count, text size unbounded; encrypted PDFs | caps (3000 pages, 8M chars), encrypted refused; flate-bomb memory test |

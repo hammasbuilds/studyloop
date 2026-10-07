@@ -140,7 +140,7 @@ Every number below is printed by the code in this repository.
 - **The extractive answer is not a summary.** It returns the best-matching sentences verbatim, so a "why" question gets the passages that talk about the subject, not a reasoned explanation. A model can write one, with verified quotes.
 - **Concepts and quiz sentences are heuristics.** Some key concepts are odd (a noun phrase picked by frequency), and some cloze blanks are answerable from context. Questions test recognition of the text you just read, not transfer.
 - **BKT parameters are fixed priors, not fitted.** One learner and a few answers per topic leave nothing to fit, so the knowledge estimate is a sensible default rather than a calibrated probability.
-- **Phrase check is a heuristic.** Questions of three or more content words must have two neighbouring question words close together in one passage. It stops \"boiling point of mercury\" matching a book that only boils mercury; a legitimate question phrased with the words far apart can now abstain.
+- **Phrase check is a heuristic.** Questions of three or more content words must have two neighbouring question words close together in one passage. It stops "boiling point of mercury" matching a book that only boils mercury; a legitimate question phrased with the words far apart can now abstain.
 - **One user, one machine.** No accounts, no sync, no multi-user locking beyond SQLite's.
 - **No model is bundled** and the optional LLM path was tested against fakes and failure cases, not against a live model in this build.
 
