@@ -325,7 +325,7 @@ svg, img { max-width: 100%; }
 .btn.loading::after { content: ""; position: absolute; inset: 0; margin: auto; width: 18px; height: 18px; border-radius: 50%;
   border: 3px solid rgba(255,255,255,.4); border-top-color: #fff; animation: spin .7s linear infinite; }
 .btn.secondary.loading::after { border-color: var(--border); border-top-color: var(--accent); }
-.btn.ok { animation: flash-ok .9s var(--ease-std); } .btn.err { animation: flash-err .9s var(--ease-std); }
+.btn.ok, .opt.ok { animation: flash-ok .9s var(--ease-std); } .btn.err, .opt.err { animation: flash-err .9s var(--ease-std); }
 @keyframes flash-ok { 30% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--good) 40%, transparent); } }
 @keyframes flash-err { 30% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--bad) 40%, transparent); } }
 
@@ -380,4 +380,15 @@ nav.links a.active { animation: chip-pop 300ms var(--ease-spring); }
   .toast { transform: translate(-50%, 0); } .card:hover, .stat:hover, .book-card:hover { transform: none !important; }
   .ripple, .confetti { display: none; }
   .btn.loading::after { animation: spin 1.4s linear infinite !important; }
+}
+
+/* phone: the link strip scrolls inside its own box and never runs under the theme button */
+nav.links { min-width: 0; scrollbar-width: none; }
+nav.links::-webkit-scrollbar { display: none; }
+.top .icon-btn, #theme { flex: none; position: relative; z-index: 1; }
+@media (max-width: 520px) {
+  .top .inner { gap: 8px; padding: 8px 10px; }
+  .brand span, .brand .name { display: none; }
+  nav.links a { padding: 6px 10px; }
+  nav.links { -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 22px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 22px), transparent); }
 }

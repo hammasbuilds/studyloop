@@ -377,10 +377,11 @@ function pollBooks(books) {
 }
 async function upload(file, url, text) {
   const msg = document.getElementById("msg"); msg.innerHTML = `<span class="spinner"></span> Uploading…`;
+  const btn = document.getElementById(url ? "addurl" : text ? "addtext" : "drop") || msg;
   const form = new FormData(); const title = document.getElementById("title").value.trim();
   if (file) form.append("file", file); if (url) form.append("url", url); if (text) form.append("text", text); if (title) form.append("title", title);
-  try { await api("/books", { method: "POST", form }); msg.textContent = "Converting in the background…"; toast("Import started"); render(); }
-  catch (e) { msg.textContent = "Could not add: " + e.message; }
+  try { await api("/books", { method: "POST", form }); msg.textContent = "Converting in the background…"; toast("Import started"); fx.flash(btn, true); render(); }
+  catch (e) { msg.textContent = "Could not add: " + e.message; fx.flash(btn, false); }
 }
 
 /* ---------- book / course outline ---------- */
@@ -497,6 +498,7 @@ async function submitAnswer(q, val) {
   try {
     const r = await api("/quiz/answer", { method: "POST", json: { question_id: q.id, response: val } });
     z.done++; if (r.correct) z.right++; z.last = r; fx.answer(r);
+    fx.flash(document.getElementById("submit") || document.querySelector(".opt.right, .opt[data-o]"), true);
     document.querySelectorAll(".opt").forEach((b) => { if (b.dataset.o.toLowerCase() === r.answer.toLowerCase()) b.classList.add("right"); else if (b.dataset.o === val) b.classList.add("wrong"); });
     const verdict = r.kind === "tf" ? (r.statement_is_true ? "This statement is true: it is in the book." : "This statement is false: the book says otherwise.") : "";
     document.getElementById("fb").innerHTML = `<div class="feedback ${r.correct ? "good" : "bad"}"><strong>${r.correct ? "Correct." : "Not quite."}</strong>
@@ -506,7 +508,7 @@ async function submitAnswer(q, val) {
       <p><button class="btn" id="next">${z.i + 1 >= z.qs.length ? "Finish" : "Next"} →</button></p>`;
     const nx = document.getElementById("next"); nx.focus();
     nx.onclick = () => { z.i++; z.busy = false; showQuestion(); };
-  } catch (e) { z.busy = false; toast(e.message); }
+  } catch (e) { z.busy = false; toast(e.message); fx.flash(document.getElementById("submit") || document.querySelector(".opt"), false); }
 }
 async function quizDone() {
   const z = state.quiz, box = document.getElementById("quizbox"), last = z.last.mastery;
@@ -547,9 +549,9 @@ route(/^\/ask(?:\/(\d+))?$/, "ask", async (m, params) => {
   const run = async (text) => {
     if (!text.trim()) return; input.value = text;
     const res = document.getElementById("result"), gb = document.getElementById("go"); res.innerHTML = `<p class="muted"><span class="spinner"></span> Searching the book…</p>`; fx.busy(gb, true);
-    try { const r = await api("/ask", { method: "POST", json: { book_id: bookId, question: text } }); res.innerHTML = answerHtml(r);
+    try { const r = await api("/ask", { method: "POST", json: { book_id: bookId, question: text } }); res.innerHTML = answerHtml(r); fx.flash(gb, true);
       document.getElementById("hist").innerHTML = histHtml(await api("/history?book_id=" + bookId + "&limit=8")); }
-    catch (e) { res.innerHTML = `<div class="card">${esc(e.message)}</div>`; fx.shake(res); }
+    catch (e) { res.innerHTML = `<div class="card">${esc(e.message)}</div>`; fx.shake(res); fx.flash(gb, false); }
     finally { fx.busy(gb, false); }
   };
   document.getElementById("askf").onsubmit = (e) => { e.preventDefault(); run(input.value); };
