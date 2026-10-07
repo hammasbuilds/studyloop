@@ -23,6 +23,8 @@ from .textutil import locate, split_sentences, tokens
 ABSTAIN_BELOW = 0.55  # idf-weighted share of the question's terms one passage must contain
 MAX_SENTENCES = 3
 TOP_PASSAGES = 6
+PHRASE_GAP = 3  # question words that sit side by side must be this close (in content words)
+PHRASE_PENALTY = ABSTAIN_BELOW - 0.01
 
 
 @dataclass
@@ -78,6 +80,24 @@ def get_index(con: sqlite3.Connection, book_id: int) -> Index:
     idx = Index(book_id, md, passages, BM25([p.toks for p in passages]), vocab, topics)
     _CACHE[book_id] = idx
     return idx
+
+
+def _phrase_supported(terms: list[str], passages: list[PassageRec]) -> bool:
+    """A question of three or more content words ("boiling point of mercury") names a phrase.
+    Finding every word scattered across a paragraph ("boiling the mercury ... pointing out") is
+    not an answer: at least one neighbouring pair of question words must also be neighbours in a
+    passage. Shorter questions are left to the coverage test."""
+    if len(terms) < 3:
+        return True
+    pairs = list(zip(terms, terms[1:], strict=False))
+    for p in passages:
+        pos: dict[str, list[int]] = {}
+        for i, t in enumerate(p.toks):
+            pos.setdefault(t, []).append(i)
+        for a, b in pairs:
+            if any(abs(i - j) <= PHRASE_GAP for i in pos.get(a, ()) for j in pos.get(b, ())):
+                return True
+    return False
 
 
 def _idf(idx: Index, term: str) -> float:
@@ -162,6 +182,8 @@ def extractive(
     support = max(
         sum(weights[t] for t in weights if t in p.toks) / total_w for p, _ in hits
     )
+    if not _phrase_supported(terms, [p for p, _ in hits]):
+        support = min(support, PHRASE_PENALTY)
     chosen.sort(key=lambda c: c[1])
     return [(c[1], c[2]) for c in chosen], support
 

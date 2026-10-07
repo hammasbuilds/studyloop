@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import re
 import sqlite3
 import threading
 from collections.abc import Iterator
@@ -15,10 +14,17 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import ask as ask_mod
-from . import db, ingest, mastery, memory, quiz
+from . import db, exports, ingest, mastery, memory, net, quiz
 from . import llm as llm_mod
 
 STATIC = Path(__file__).parent / "static"
+LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1", "testserver"}
+CSP = (
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; "
+    "form-action 'self'; frame-ancestors 'none'"
+)
+_import_slots = threading.BoundedSemaphore(2)  # imports are CPU-heavy: two at a time
 
 
 class AskBody(BaseModel):
@@ -49,10 +55,41 @@ class SettingsBody(BaseModel):
     use_llm: bool | None = None
 
 
-def create_app(db_path: str | Path | None = None, sync_import: bool = False) -> FastAPI:
-    """``sync_import`` runs imports inline (tests); the default imports in a background thread."""
+def _host_of(netloc: str) -> str:
+    h = netloc.strip().lower()
+    if h.startswith("["):
+        return h[1 : h.find("]")]
+    return h.rsplit(":", 1)[0] if h.count(":") == 1 else h
+
+
+async def _read_limited(file: UploadFile) -> bytes:
+    """Read an upload in pieces and stop as soon as it is over the limit."""
+    buf = bytearray()
+    while chunk := await file.read(1024 * 1024):
+        buf += chunk
+        if len(buf) > ingest.MAX_UPLOAD:
+            raise HTTPException(413, "file is larger than 60 MB")
+    return bytes(buf)
+
+
+def create_app(
+    db_path: str | Path | None = None, sync_import: bool = False, loopback_only: bool = True
+) -> FastAPI:
+    """``sync_import`` runs imports inline (tests); the default imports in a background thread.
+
+    ``loopback_only`` (the default) answers only requests addressed to localhost / 127.0.0.1 and
+    refuses cross-site writes, which closes DNS-rebinding and drive-by form posts from other
+    websites. Start with ``--host 0.0.0.0`` and it is switched off (there is no login either way).
+    """
     path = Path(db_path) if db_path else db.default_db_path()
     db.init(path)
+    _con = db.connect(path)
+    try:  # an import killed by a restart would otherwise show "processing" forever
+        _con.execute("UPDATE books SET status='error', error='import interrupted by a restart; "
+                     "add it again' WHERE status='processing'")
+        _con.commit()
+    finally:
+        _con.close()
     app = FastAPI(title="StudyLoop", version="0.1.0")
     app.state.db_path = path
     app.state.sync_import = sync_import
@@ -65,6 +102,27 @@ def create_app(db_path: str | Path | None = None, sync_import: bool = False) -> 
             con.close()
 
     Con = Depends(get_con)  # noqa: N806
+
+    @app.middleware("http")
+    async def guard(request: Request, call_next):
+        from fastapi.responses import JSONResponse
+
+        if loopback_only:
+            if _host_of(request.headers.get("host", "")) not in LOOPBACK_HOSTS:
+                return JSONResponse({"detail": "unexpected Host header"}, status_code=403)
+            if request.method not in ("GET", "HEAD", "OPTIONS"):
+                origin = request.headers.get("origin")
+                site = request.headers.get("sec-fetch-site")
+                if site in ("cross-site", "same-site") or (
+                    origin and origin != "null"
+                    and origin.split("://", 1)[-1].lower() != request.headers.get("host", "").lower()
+                ) or origin == "null":
+                    return JSONResponse({"detail": "cross-site request refused"}, status_code=403)
+        response = await call_next(request)
+        response.headers["Content-Security-Policy"] = CSP
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        return response
 
     def need_book(con: sqlite3.Connection, book_id: int) -> sqlite3.Row:
         r = con.execute("SELECT * FROM books WHERE id=?", (book_id,)).fetchone()
@@ -143,7 +201,8 @@ def create_app(db_path: str | Path | None = None, sync_import: bool = False) -> 
         con = db.connect(path)
         try:
             try:
-                conv = convert()
+                with _import_slots:
+                    conv = convert()
                 if user_title:
                     conv.title = user_title
                 ingest.add_book(con, conv, con.execute(
@@ -181,22 +240,34 @@ def create_app(db_path: str | Path | None = None, sync_import: bool = False) -> 
         file: UploadFile | None = File(default=None),
         url: str | None = Form(default=None),
         title: str | None = Form(default=None),
+        text: str | None = Form(default=None),
         con: sqlite3.Connection = Con,
     ) -> dict:
         title = (title or "").strip() or None
         if file is not None and file.filename:
-            data = await file.read()
-            name = file.filename
+            data = await _read_limited(file)
+            name = ingest.clean_filename(file.filename)
             return _start_import(
                 con, title or Path(name).stem, "upload", name,
                 lambda: ingest.convert_upload(name, data, title), title,
             )
         if url and url.strip():
             u = url.strip()
-            if not re.match(r"^https?://", u, re.I):
-                raise HTTPException(400, "the URL must start with http:// or https://")
+            try:
+                net.check_url_syntax(u)  # scheme, credentials, literal private IPs; DNS is checked later
+            except net.UnsafeURL as exc:
+                raise HTTPException(400, str(exc)) from exc
             return _start_import(con, title or u, "web", u, lambda: ingest.convert_url(u), title)
-        raise HTTPException(400, "send a file or a url")
+        if text and text.strip():
+            body = text.encode("utf-8")
+            if len(body) > ingest.MAX_UPLOAD:
+                raise HTTPException(413, "text is larger than 60 MB")
+            name = (title or "Pasted text") + ".txt"
+            return _start_import(
+                con, title or "Pasted text", "upload", "pasted text",
+                lambda: ingest.convert_upload(name, body, title), title,
+            )
+        raise HTTPException(400, "send a file, a url or some text")
 
     @app.post("/api/books/sample", status_code=201)
     def add_sample(con: sqlite3.Connection = Con) -> dict:
@@ -235,6 +306,24 @@ def create_app(db_path: str | Path | None = None, sync_import: bool = False) -> 
     @app.get("/api/books/{book_id}/markdown", response_class=PlainTextResponse)
     def book_markdown(book_id: int, con: sqlite3.Connection = Con) -> str:
         return need_book(con, book_id)["markdown"]
+
+    @app.get("/api/books/{book_id}/notes.md", response_class=PlainTextResponse)
+    def book_notes_export(book_id: int, con: sqlite3.Connection = Con) -> PlainTextResponse:
+        need_book(con, book_id)
+        return PlainTextResponse(
+            exports.notes_markdown(con, book_id),
+            headers={"Content-Disposition": f'attachment; filename="notes-{book_id}.md"'})
+
+    @app.get("/api/books/{book_id}/flashcards.csv")
+    def book_flashcards(book_id: int, con: sqlite3.Connection = Con):
+        from fastapi.responses import Response
+
+        need_book(con, book_id)
+        text, n = exports.flashcards_csv(con, book_id)
+        return Response(
+            "﻿" + text, media_type="text/csv; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="flashcards-{book_id}.csv"',
+                     "X-Cards": str(n)})
 
     @app.delete("/api/books/{book_id}")
     def delete_book(book_id: int, con: sqlite3.Connection = Con) -> dict:

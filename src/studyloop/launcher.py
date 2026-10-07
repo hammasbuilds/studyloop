@@ -54,4 +54,4 @@ def main(argv: list[str] | None = None) -> None:
     print(f"StudyLoop on {url}  (data: {path})  Ctrl+C to stop")
     if not a.no_browser:
         threading.Thread(target=_open_when_ready, args=(url,), daemon=True).start()
-    uvicorn.run(create_app(path), host=a.host, port=port, log_level="warning")
+    uvicorn.run(create_app(path, loopback_only=a.host in ("127.0.0.1", "localhost", "::1")), host=a.host, port=port, log_level="warning")

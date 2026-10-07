@@ -1,6 +1,5 @@
 On-book questions : 26
   answered        : 26/26
   quote has the concept's words : 26/26
-Off-book questions: 20
-  abstained       : 19/20
-  answered anyway : What is the boiling point of mercury?
+Off-book questions: 24
+  abstained       : 24/24

@@ -13,11 +13,13 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import concepts, db
+from . import concepts, db, net
 from .structure import Para, ParsedBook, parse_course, split_long
 
 SAMPLE = Path(__file__).parent / "sample" / "candle.md"
 MAX_UPLOAD = 60 * 1024 * 1024
+MAX_PDF_PAGES = 3000
+MAX_MARKDOWN_CHARS = 8_000_000  # about 1.3 million words; far beyond any textbook
 
 
 class IngestError(ValueError):
@@ -75,10 +77,37 @@ def text_to_markdown(text: str, title: str) -> str:
     return body
 
 
+def clean_filename(name: str) -> str:
+    """Only the last path component, no control characters, bounded: it is shown in the UI and
+    stored, never used as a path."""
+    base = re.split(r"[\\/]", name or "")[-1]
+    base = "".join(ch for ch in base if ch.isprintable()).strip().strip(".")
+    return base[:120] or "upload"
+
+
+def _check_pdf(data: bytes) -> None:
+    from io import BytesIO
+
+    from pypdf import PdfReader
+
+    try:
+        reader = PdfReader(BytesIO(data))
+        if reader.is_encrypted:
+            raise IngestError("the PDF is password-protected")
+        n = len(reader.pages)
+    except IngestError:
+        raise
+    except Exception as exc:
+        raise IngestError(f"could not read the PDF: {exc}") from exc
+    if n > MAX_PDF_PAGES:
+        raise IngestError(f"the PDF has {n} pages; the limit is {MAX_PDF_PAGES}")
+
+
 def pdf_to_markdown(data: bytes, title: str | None) -> Converted:
     from booktoskill.pipeline import convert, plain_page_texts
     from booktoskill.structure import book_to_markdown
 
+    _check_pdf(data)
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / "book.pdf"
         path.write_bytes(data)
@@ -120,6 +149,7 @@ def convert_upload(filename: str, data: bytes, title: str | None = None) -> Conv
         raise IngestError("file is larger than 60 MB")
     if not data:
         raise IngestError("the file is empty")
+    filename = clean_filename(filename)
     ext = Path(filename).suffix.lower()
     stem = Path(filename).stem.replace("_", " ").replace("-", " ").strip() or "Untitled"
     if ext == ".pdf" or data[:5] == b"%PDF-":
@@ -137,17 +167,28 @@ def convert_upload(filename: str, data: bytes, title: str | None = None) -> Conv
         raise IngestError(f"unsupported file type {ext!r}: use PDF, markdown, text or HTML")
     if not md.strip():
         raise IngestError("the file has no text")
+    _check_size(md)
     return Converted(md, title or _first_h1(md) or stem, source, {"filename": filename})
 
 
+def _check_size(md: str) -> None:
+    if len(md) > MAX_MARKDOWN_CHARS:
+        raise IngestError(f"the text is too long ({len(md):,} characters; the limit is "
+                          f"{MAX_MARKDOWN_CHARS:,})")
+
+
 def convert_url(url: str) -> Converted:
-    from web2md.fetch import FetchError, fetch
+    """Fetch a public web page (see ``net``: no local or private addresses) and convert it."""
+    from web2md.fetch import decode_html
 
     try:
-        html, final = fetch(url)
-    except FetchError as exc:
+        body, final, ctype = net.fetch_page(url)
+    except (net.UnsafeURL, net.FetchFailed) as exc:
         raise IngestError(str(exc)) from exc
-    return html_to_markdown(html, final)
+    charset = None
+    if ctype and "charset=" in ctype.lower():
+        charset = ctype.lower().split("charset=")[1].split(";")[0].strip()
+    return html_to_markdown(decode_html(body, charset), final)
 
 
 def _first_h1(md: str) -> str | None:
@@ -199,6 +240,7 @@ def add_book(
     ``book_id`` fills a placeholder row created earlier (a background import).
     """
     md = tidy(conv.markdown)
+    _check_size(md)
     parsed = parse_course(md, conv.title)
     if not parsed.chapters or not any(t.paras for c in parsed.chapters for t in c.topics):
         raise IngestError("could not find any study text in that source")

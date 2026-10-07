@@ -186,6 +186,8 @@ route(/^\/library$/, "library", async () => {
         <div class="drop" id="drop" tabindex="0" role="button" aria-label="Choose a file"><strong>Drop a PDF, markdown, text or HTML file here</strong><div class="muted small">or click to choose · up to 60 MB · PDFs need a text layer (no OCR)</div>
           <input type="file" id="file" accept=".pdf,.md,.markdown,.txt,.html,.htm" hidden></div>
         <div><label for="url">…or paste a web page address</label><div class="row" style="flex-wrap:nowrap"><input type="url" id="url" placeholder="https://example.org/article"><button class="btn" id="addurl">Add</button></div></div>
+        <details><summary class="small">…or paste text</summary><textarea id="pasted" aria-label="Pasted text" placeholder="Paste lecture notes or an article" style="margin-top:6px"></textarea>
+          <p><button class="btn secondary small" id="addtext">Add pasted text</button></p></details>
         <div><label for="title">Title (optional)</label><input type="text" id="title" placeholder="Taken from the file when left empty"></div>
         <button class="btn secondary" id="sample">Load the sample book</button>
         <p class="small muted" id="msg"></p>
@@ -201,6 +203,7 @@ route(/^\/library$/, "library", async () => {
   file.onchange = () => file.files[0] && upload(file.files[0]);
   document.getElementById("addurl").onclick = () => { const u = document.getElementById("url").value.trim(); if (u) upload(null, u); };
   document.getElementById("sample").onclick = async () => { await loadSample(); };
+  document.getElementById("addtext").onclick = () => { const t = document.getElementById("pasted").value; if (t.trim()) upload(null, null, t); };
   wireDelete(); pollBooks(books);
 });
 function booksList(books) {
@@ -224,10 +227,10 @@ function pollBooks(books) {
     pollBooks(fresh);
   }, 1500);
 }
-async function upload(file, url) {
+async function upload(file, url, text) {
   const msg = document.getElementById("msg"); msg.innerHTML = `<span class="spinner"></span> Uploading…`;
   const form = new FormData(); const title = document.getElementById("title").value.trim();
-  if (file) form.append("file", file); if (url) form.append("url", url); if (title) form.append("title", title);
+  if (file) form.append("file", file); if (url) form.append("url", url); if (text) form.append("text", text); if (title) form.append("title", title);
   try { await api("/books", { method: "POST", form }); msg.textContent = "Converting in the background…"; toast("Import started"); render(); }
   catch (e) { msg.textContent = "Could not add: " + e.message; }
 }
@@ -240,7 +243,9 @@ route(/^\/book\/(\d+)$/, "library", async (m) => {
   $app.innerHTML = `
     <div class="row" style="margin-bottom:6px"><a href="#/">← Dashboard</a></div>
     <div class="row"><h1 style="margin:0">${esc(b.title)}</h1><a class="btn right" href="#/ask/${b.id}">Ask this book</a>
-      <a class="btn secondary" href="/api/books/${b.id}/markdown" target="_blank" rel="noopener">Notes as markdown</a></div>
+      <a class="btn secondary" href="/api/books/${b.id}/notes.md" download>Export my notes</a>
+      <a class="btn secondary" href="/api/books/${b.id}/flashcards.csv" download title="One card per concept the book defines; imports into Anki">Flashcards (CSV)</a>
+      <a class="btn secondary" href="/api/books/${b.id}/markdown" target="_blank" rel="noopener">Book text</a></div>
     <p class="muted">${b.chapters} chapters · ${p.topics} topics · ${b.n_words.toLocaleString()} words · ${esc(b.source_type)}${b.meta.author ? " · " + esc(b.meta.author) : ""}${b.meta.licence ? " · " + esc(b.meta.licence) : ""}</p>
     <div class="stats"><div class="stat"><div class="v">${p.mastered}/${p.topics}</div><div class="l">mastered</div></div>
       <div class="stat"><div class="v">${p.practised}</div><div class="l">practised</div></div>

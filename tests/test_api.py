@@ -5,7 +5,7 @@ from __future__ import annotations
 from conftest import TINY_BOOK
 from fastapi.testclient import TestClient
 
-from studyloop import ask
+from studyloop import ask, net
 from studyloop.app import create_app
 
 
@@ -63,7 +63,8 @@ def test_pdf_upload_end_to_end(client, tmp_path):
 def test_url_import_uses_web_to_markdown(client, monkeypatch):
     from test_ingest import HTML
 
-    monkeypatch.setattr("web2md.fetch.fetch", lambda url, timeout=20.0: (HTML, url))
+    monkeypatch.setattr(
+        "studyloop.net.fetch_page", lambda url: (HTML.encode(), url, "text/html; charset=utf-8"))
     r = client.post("/api/books", data={"url": "https://example.org/rivers"})
     assert r.status_code == 202
     b = client.get(f"/api/books/{r.json()['id']}").json()
@@ -73,12 +74,10 @@ def test_url_import_uses_web_to_markdown(client, monkeypatch):
 
 
 def test_url_failure_is_reported(client, monkeypatch):
-    from web2md.fetch import FetchError
+    def boom(url):
+        raise net.FetchFailed("could not fetch: offline")
 
-    def boom(url, timeout=20.0):
-        raise FetchError("could not fetch: offline")
-
-    monkeypatch.setattr("web2md.fetch.fetch", boom)
+    monkeypatch.setattr("studyloop.net.fetch_page", boom)
     r = client.post("/api/books", data={"url": "https://example.org/x"})
     assert client.get(f"/api/books/{r.json()['id']}").json()["error"].endswith("offline")
 
@@ -239,3 +238,48 @@ def test_dashboard_with_progress(client):
     assert d["books"][0]["progress"]["practised"] == 1
     assert d["activity"]["today"] == 5 and d["activity"]["streak"] == 1 and d["activity"]["accuracy"] is not None
     assert d["review_next"][0]["topic_id"] == tid
+
+
+def test_notes_export_and_flashcards_csv(client):
+    import csv
+    import io
+
+    bid = _upload(client).json()["id"]
+    tid = client.get(f"/api/books/{bid}").json()["course"][0]["topics"][0]["id"]
+    client.post("/api/notes", json={"topic_id": tid, "text": "remember the delta"})
+    client.post("/api/notes", json={"book_id": bid, "text": "=HYPERLINK(whole book)"})
+    client.post("/api/ask", json={"book_id": bid, "question": "What is a delta?", "use_llm": False})
+    md = client.get(f"/api/books/{bid}/notes.md")
+    assert "remember the delta" in md.text and "## Whole book" in md.text
+    assert "What is a delta?" in md.text and "attachment" in md.headers["content-disposition"]
+    r = client.get(f"/api/books/{bid}/flashcards.csv")
+    rows = list(csv.reader(io.StringIO(r.text.lstrip("﻿"))))
+    assert rows[0] == ["Front", "Back", "Source"] and len(rows) - 1 == int(r.headers["x-cards"]) > 0
+    assert all(len(x) == 3 and x[1] for x in rows[1:])
+    assert client.get("/api/books/999/flashcards.csv").status_code == 404
+
+
+def test_csv_cells_cannot_start_a_spreadsheet_formula():
+    from studyloop.exports import _cell
+
+    assert _cell("=1+1").startswith("'=") and _cell("@x").startswith("'@") and _cell("ok") == "ok"
+
+
+def test_pasted_text_becomes_a_book(client):
+    r = client.post("/api/books", data={"text": TINY_BOOK, "title": "Pasted rivers"})
+    assert r.status_code == 202
+    b = client.get(f"/api/books/{r.json()['id']}").json()
+    assert b["status"] == "ready" and b["title"] == "Pasted rivers"
+    assert client.post("/api/books", data={"text": "   "}).status_code == 400
+
+
+def test_import_interrupted_by_restart_is_marked_failed(db_path):
+    from studyloop import db
+
+    con = db.connect(db_path)
+    con.execute("INSERT INTO books(title, source_type, status, added_at) VALUES ('x','web','processing',1)")
+    con.commit()
+    con.close()
+    c = TestClient(create_app(db_path, sync_import=True))
+    b = c.get("/api/books").json()[0]
+    assert b["status"] == "error" and "restart" in b["error"]

@@ -73,7 +73,7 @@ def play_quiz(page, miss_every: int = 3, shot: str | None = None, start: str = "
 
 with sync_playwright() as p:
     browser = p.chromium.launch(channel="msedge")
-    ctx = browser.new_context(viewport={"width": 1280, "height": 900})
+    ctx = browser.new_context(viewport={"width": 1280, "height": 900}, bypass_csp=True)
     page = ctx.new_page()
     page.on("console", lambda m: problems.append(f"console {m.type}: {m.text}") if m.type == "error" else None)
     page.on("pageerror", lambda e: problems.append(f"pageerror: {e}"))

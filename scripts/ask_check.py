@@ -28,6 +28,8 @@ OFF_BOOK = [
     "What is the tallest mountain on Earth?", "How does the stock market work?",
     "What is photosynthesis in detail?", "What causes earthquakes?", "Who invented the telephone?",
     "What is the population of Pakistan?", "How do airplanes fly?",
+    "What is the melting point of iron?", "What is the freezing point of mercury?",
+    "What is the boiling point of ethanol?", "How hot is the surface of the sun?",
 ]
 
 
