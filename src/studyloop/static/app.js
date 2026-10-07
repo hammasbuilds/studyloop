@@ -326,36 +326,74 @@ async function loadSample() {
 }
 
 /* ---------- library ---------- */
+const ACCEPT = [".pdf", ".md", ".markdown", ".txt", ".text", ".html", ".htm"];
+const MAX_MB = 60;
+const EXAMPLE_MD = `# How a River Forms
+
+## Rain and springs
+
+Rain that falls on high ground soaks into the soil or runs over it. Where water comes out of the ground it is called a spring, and a spring is the usual start of a river.
+
+## Streams join
+
+Small streams join to make a larger stream. A tributary is a smaller river that flows into a larger one. Where two rivers meet, the place is called a confluence.
+
+## The river meets the sea
+
+A river ends at its mouth, where it empties into the sea or a lake. Fine soil carried by the water settles there and builds a delta.
+`;
+const EXAMPLE_URL = "https://en.wikipedia.org/wiki/Capillary_action";
 route(/^\/library$/, "library", async () => {
   const books = await api("/books");
   $app.innerHTML = `<h1>Library</h1>
     <div class="grid cols-2">
       <section class="card stack"><h2>Add a book</h2>
-        <div class="drop" id="drop" tabindex="0" role="button" aria-label="Choose a file"><strong>Drop a PDF, markdown, text or HTML file here</strong><div class="muted small">or click to choose · up to 60 MB · PDFs need a text layer (no OCR)</div>
-          <input type="file" id="file" accept=".pdf,.md,.markdown,.txt,.html,.htm" hidden></div>
-        <div><label for="url">…or paste a web page address</label><div class="row" style="flex-wrap:nowrap"><input type="url" id="url" placeholder="https://example.org/article"><button class="btn" id="addurl">Add</button></div></div>
-        <details><summary class="small">…or paste text</summary><textarea id="pasted" aria-label="Pasted text" placeholder="Paste lecture notes or an article" style="margin-top:6px"></textarea>
-          <p><button class="btn secondary small" id="addtext">Add pasted text</button></p></details>
+        <div class="drop" id="drop" tabindex="0" role="button" aria-label="Choose a file or drop one here"><strong>Drop a file here, or click to choose</strong>
+          <div class="muted small">PDF, markdown (.md), text (.txt) or HTML · one file · up to ${MAX_MB} MB · PDFs need a text layer (no OCR)</div>
+          <input type="file" id="file" accept="${ACCEPT.join(",")}" hidden></div>
+        <div class="hint small muted">Input looks like: a textbook PDF, a markdown file with <code>#</code> / <code>##</code> headings, or lecture notes as plain text. Headings become chapters and topics. <button class="linkbtn" id="exfile" type="button">Load example file</button></div>
+        <div class="progress" id="prog" hidden><i></i></div>
+        <div><label for="url">Or paste a web page address</label><div class="row" style="flex-wrap:nowrap"><input type="url" id="url" placeholder="${EXAMPLE_URL}"><button class="btn" id="addurl">Add</button></div>
+          <div class="hint small muted">Input looks like: <code>https://…</code> to one article (http or https; up to 20 MB; needs internet; private addresses are refused). <button class="linkbtn" id="exurl" type="button">Load example</button></div></div>
+        <div><label for="pasted">Or paste text</label><textarea id="pasted" aria-label="Pasted text" placeholder="Paste lecture notes or an article. Lines starting with # or ## become chapters and topics." style="min-height:130px"></textarea>
+          <div class="row" style="margin-top:6px"><button class="btn secondary small" id="addtext">Add pasted text</button><button class="linkbtn" id="extext" type="button">Load example</button><span class="small muted" id="count"></span></div></div>
         <div><label for="title">Title (optional)</label><input type="text" id="title" placeholder="Taken from the file when left empty"></div>
         <button class="btn secondary" id="sample">Load the sample book</button>
-        <p class="small muted" id="msg"></p>
+        <p class="small muted" id="msg" role="status"></p>
       </section>
       <section class="card"><h2>Books</h2><div id="books">${booksList(books)}</div></section>
     </div>`;
   const drop = document.getElementById("drop"), file = document.getElementById("file");
+  const pasted = document.getElementById("pasted"), url = document.getElementById("url");
   drop.onclick = () => file.click();
-  drop.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") file.click(); };
+  drop.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); file.click(); } };
   ["dragover", "dragenter"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add("over"); }));
   ["dragleave", "drop"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove("over"); }));
-  drop.addEventListener("drop", (e) => { if (e.dataTransfer.files[0]) upload(e.dataTransfer.files[0]); });
-  file.onchange = () => file.files[0] && upload(file.files[0]);
-  document.getElementById("addurl").onclick = () => { const u = document.getElementById("url").value.trim(); if (u) upload(null, u); };
+  drop.addEventListener("drop", (e) => {
+    const files = e.dataTransfer.files;
+    if (files.length > 1) { setMsg("Drop one file at a time (you dropped " + files.length + ")."); return; }
+    if (files.length === 1) { upload(files[0]); return; }
+    const link = (e.dataTransfer.getData("text/uri-list") || "").split("\n")[0].trim();
+    if (/^https?:\/\//i.test(link)) { url.value = link; upload(null, link); return; }
+    const txt = e.dataTransfer.getData("text/plain");
+    if (txt && txt.trim()) { pasted.value = txt; updateCount(); setMsg("Dropped text is in the box below. Check it and press Add pasted text."); return; }
+    setMsg("Nothing usable was dropped. Drop a file, a link or some text.");
+  });
+  file.onchange = () => { if (file.files[0]) upload(file.files[0]); file.value = ""; };
+  document.getElementById("addurl").onclick = () => { const u = url.value.trim(); if (!u) return setMsg("Type or paste a web address first."); upload(null, u); };
+  url.onkeydown = (e) => { if (e.key === "Enter") document.getElementById("addurl").click(); };
   document.getElementById("sample").onclick = async () => { await loadSample(); };
-  document.getElementById("addtext").onclick = () => { const t = document.getElementById("pasted").value; if (t.trim()) upload(null, null, t); };
+  document.getElementById("addtext").onclick = () => { const t = pasted.value; if (!t.trim()) return setMsg("Paste some text first."); upload(null, null, t); };
+  document.getElementById("exfile").onclick = () => upload(new File([EXAMPLE_MD], "how-a-river-forms.md", { type: "text/markdown" }));
+  document.getElementById("exurl").onclick = () => { url.value = EXAMPLE_URL; url.focus(); setMsg("Example address filled in. Press Add to import it (needs internet)."); };
+  document.getElementById("extext").onclick = () => { pasted.value = EXAMPLE_MD; updateCount(); pasted.focus(); };
+  const updateCount = () => { const n = (pasted.value.match(/\S+/g) || []).length; document.getElementById("count").textContent = n ? n.toLocaleString() + " words" : ""; };
+  pasted.addEventListener("input", updateCount);
   wireDelete(); pollBooks(books);
 });
+function setMsg(t) { const m = document.getElementById("msg"); if (m) m.textContent = t; }
 function booksList(books) {
-  if (!books.length) return `<p class="muted">No books yet.</p>`;
+  if (!books.length) return `<p class="muted">No books yet. Drop a PDF, markdown, text or HTML file on the box, paste a web address, or paste text, then wait a few seconds while it is converted. Or load the sample book to try everything first.</p>`;
   return books.map((b) => `<div class="li"><div class="main"><strong>${b.status === "ready" ? `<a href="#/book/${b.id}">${esc(b.title)}</a>` : esc(b.title)}</strong>
     <div class="small muted">${b.status === "ready" ? `${b.chapters} chapters · ${b.n_words.toLocaleString()} words · ${esc(b.source_type)}` : b.status === "error" ? "Failed: " + esc(b.error) : '<span class="spinner"></span> converting…'}</div></div>
     <button class="btn danger small" data-del="${b.id}">Delete</button></div>`).join("");
@@ -375,14 +413,47 @@ function pollBooks(books) {
     pollBooks(fresh);
   }, 1500);
 }
+function uploadError(file) {
+  const ext = (file.name.match(/\.[^.]+$/) || [""])[0].toLowerCase();
+  if (ext && !ACCEPT.includes(ext)) return `"${file.name}" is a ${ext} file. Use PDF, markdown, text or HTML.`;
+  if (file.size > MAX_MB * 1024 * 1024) return `"${file.name}" is ${(file.size / 1048576).toFixed(1)} MB; the limit is ${MAX_MB} MB.`;
+  if (file.size === 0) return `"${file.name}" is empty.`;
+  return null;
+}
+function postForm(form, onProgress) {
+  return new Promise((resolve, reject) => {
+    const x = new XMLHttpRequest(); x.open("POST", "/api/books");
+    x.upload.onprogress = (e) => e.lengthComputable && onProgress(e.loaded / e.total);
+    x.onload = () => {
+      let d = null; try { d = JSON.parse(x.responseText); } catch (e) { /* no body */ }
+      if (x.status >= 200 && x.status < 300) resolve(d);
+      else reject(new Error((d && (d.detail?.[0]?.msg || d.detail)) || x.statusText || "upload failed"));
+    };
+    x.onerror = () => reject(new Error("could not reach the StudyLoop server"));
+    x.send(form);
+  });
+}
 async function upload(file, url, text) {
-  const msg = document.getElementById("msg"); msg.innerHTML = `<span class="spinner"></span> Uploading…`;
+  const msg = document.getElementById("msg"), prog = document.getElementById("prog");
   const btn = document.getElementById(url ? "addurl" : text ? "addtext" : "drop") || msg;
+  if (file) { const bad = uploadError(file); if (bad) { msg.textContent = "Could not add: " + bad; fx.flash(btn, false); return; } }
   const form = new FormData(); const title = document.getElementById("title").value.trim();
   if (file) form.append("file", file); if (url) form.append("url", url); if (text) form.append("text", text); if (title) form.append("title", title);
-  try { await api("/books", { method: "POST", form }); msg.textContent = "Converting in the background…"; toast("Import started"); fx.flash(btn, true); render(); }
-  catch (e) { msg.textContent = "Could not add: " + e.message; fx.flash(btn, false); }
+  msg.innerHTML = `<span class="spinner"></span> ${file ? "Uploading " + esc(file.name) + "…" : "Sending…"}`;
+  prog.hidden = false; prog.firstElementChild.style.width = "0%";
+  try {
+    await postForm(form, (f) => { prog.firstElementChild.style.width = Math.round(f * 100) + "%"; });
+    msg.textContent = "Converting in the background…"; toast("Import started"); fx.flash(btn, true); render();
+  } catch (e) { msg.textContent = "Could not add: " + e.message; fx.flash(btn, false); prog.hidden = true; }
 }
+/* a file dropped outside the drop zone must not make the browser open it and leave the app */
+["dragover", "drop"].forEach((ev) => window.addEventListener(ev, (e) => {
+  if (e.target.closest && e.target.closest("#drop")) return;
+  if (e.dataTransfer && [...(e.dataTransfer.types || [])].includes("Files")) {
+    e.preventDefault();
+    if (ev === "drop" && !location.hash.startsWith("#/library")) { toast("Open the Library to drop a file"); location.hash = "#/library"; }
+  }
+}));
 
 /* ---------- book / course outline ---------- */
 route(/^\/book\/(\d+)$/, "library", async (m) => {
@@ -530,7 +601,7 @@ document.addEventListener("keydown", (e) => {
 /* ---------- ask the book ---------- */
 route(/^\/ask(?:\/(\d+))?$/, "ask", async (m, params) => {
   const books = (await api("/books")).filter((b) => b.status === "ready");
-  if (!books.length) { $app.innerHTML = `<div class="card empty"><h2>No books yet</h2><a class="btn" href="#/library">Add a book</a></div>`; return; }
+  if (!books.length) { $app.innerHTML = `<h1>Ask the book</h1><div class="card empty"><h2>No books yet</h2><p class="muted">Questions are answered from a book you have added. Add a PDF, markdown, text or HTML file, a web address, or pasted text in the Library (or load the sample book), then come back and ask.</p><a class="btn" href="#/library">Add a book</a></div>`; return; }
   const bookId = Number(m[1] || state.ask.bookId || books[0].id); state.ask.bookId = bookId;
   const book = await api("/books/" + bookId);
   const hist = await api("/history?book_id=" + bookId + "&limit=8");
@@ -538,6 +609,7 @@ route(/^\/ask(?:\/(\d+))?$/, "ask", async (m, params) => {
     <div class="card stack"><div class="row"><label for="bk" style="margin:0">Book</label>
       <select id="bk" style="width:auto;max-width:100%">${books.map((b) => `<option value="${b.id}" ${b.id === bookId ? "selected" : ""}>${esc(b.title)}</option>`).join("")}</select>
       <span class="small muted right">Answers use only this book. Urdu, Roman Urdu and English questions work.</span></div>
+      <p class="small muted" style="margin:0">Input looks like: one question, up to 1,000 characters, e.g. <em>What is capillary attraction?</em> To ask about your own passage, <a href="#/library">paste it as text in the Library</a> first; it becomes a book you can ask.</p>
       <form class="ask-input" id="askf"><input type="text" id="q" dir="auto" placeholder="e.g. What is hydrogen?   ·   موم بتی کیوں جلتی ہے؟   ·   pani kaise banta hai" aria-label="Your question" autofocus><button class="btn" id="go">Ask</button></form>
       <div>${(book.suggestions || []).map((s) => `<a class="chip" data-q="${esc(s)}">${esc(s)}</a>`).join("")}
         ${["موم بتی کیوں جلتی ہے؟", "pani kaise banta hai", "ہائیڈروجن کیا ہے؟"].map((s) => `<a class="chip" data-q="${esc(s)}" dir="auto">${esc(s)}</a>`).join("")}</div></div>
@@ -587,9 +659,9 @@ route(/^\/review$/, "review", async () => {
   const any = sch.overdue.length + sch.today.length + sch.this_week.length + sch.later.length;
   $app.innerHTML = `<h1>Review</h1><div class="grid cols-2">
     <section class="card"><h2>What to review next</h2>${next.length ? next.map((r) => `<div class="li"><div class="main"><a href="#/topic/${r.topic_id}?quiz=1"><strong>${esc(r.topic)}</strong></a>
-      <div class="small muted">${esc(r.book)} · ${esc(r.reason)}</div></div>${pillFor(r.level)}<a class="btn small" href="#/topic/${r.topic_id}?quiz=1">Quiz</a></div>`).join("") : `<p class="muted">Nothing to review yet.</p>`}
+      <div class="small muted">${esc(r.book)} · ${esc(r.reason)}</div></div>${pillFor(r.level)}<a class="btn small" href="#/topic/${r.topic_id}?quiz=1">Quiz</a></div>`).join("") : `<p class="muted">Nothing to review yet. Add a book in the <a href="#/library">Library</a> and take a quiz on a topic.</p>`}
       <p class="small muted">Order: topics that are due (weakest and latest first), then the next unstarted topic of each book, then shaky ones. Knowledge is the BKT estimate P(known); the bar shows what you are still expected to remember today.</p></section>
-    <section class="card sched"><h2>Spaced-review schedule</h2>${any ? group("Overdue", sch.overdue) + group("Today", sch.today) + group("This week", sch.this_week) + group("Later", sch.later) : `<p class="muted">Take a quiz and your topics will appear here with their next review date.</p>`}</section></div>`;
+    <section class="card sched"><h2>Spaced-review schedule</h2>${any ? group("Overdue", sch.overdue) + group("Today", sch.today) + group("This week", sch.this_week) + group("Later", sch.later) : `<p class="muted">Take a quiz and your topics will appear here with their next review date. No books yet? <a href="#/library">Add one in the Library</a> (file, drag and drop, web address or pasted text).</p>`}</section></div>`;
 });
 
 /* ---------- memory & settings ---------- */
@@ -597,7 +669,7 @@ route(/^\/memory$/, "memory", async () => {
   const [notes, hist, sess, settings, llm] = await Promise.all([api("/notes"), api("/history?limit=30"), api("/memory/sessions"), api("/settings"), api("/llm")]);
   $app.innerHTML = `<h1>Memory</h1>
     <div class="card" style="margin-bottom:16px"><div class="row"><input type="text" id="mq" placeholder="Search your notes and past questions…" aria-label="Search memory" style="flex:1"><button class="btn" id="msearch">Search</button></div><div id="mres"></div></div>
-    <div class="grid cols-2"><section class="card"><h2>Notes (${notes.length})</h2>${notes.length ? notes.map((n) => `<div class="cite"><div>${esc(n.text).replace(/\n/g, "<br>")}</div><div class="where">${esc(n.book || "")} › <a href="#/topic/${n.topic_id}">${esc(n.topic || "book")}</a> · ${dt(n.updated)}</div></div>`).join("") : '<p class="muted">Notes you write on a topic page show up here.</p>'}</section>
+    <div class="grid cols-2"><section class="card"><h2>Notes (${notes.length})</h2>${notes.length ? notes.map((n) => `<div class="cite"><div>${esc(n.text).replace(/\n/g, "<br>")}</div><div class="where">${esc(n.book || "")} › <a href="#/topic/${n.topic_id}">${esc(n.topic || "book")}</a> · ${dt(n.updated)}</div></div>`).join("") : '<p class="muted">Notes you write on a topic page show up here. Open a book from the <a href="#/library">Library</a> to start.</p>'}</section>
     <section class="card"><h2>Question history</h2>${histHtml(hist)}</section>
     <section class="card"><h2>Sessions</h2>${sess.map((s) => `<div class="li"><div class="main">${dt(s.started)}</div><span class="small muted">${s.questions} questions · ${s.answers} quiz answers</span></div>`).join("") || '<p class="muted">None yet.</p>'}</section>
     <section class="card stack"><h2>Settings</h2>
@@ -614,6 +686,68 @@ route(/^\/memory$/, "memory", async () => {
   document.getElementById("save").onclick = async () => {
     await api("/settings", { method: "PUT", json: { daily_goal: Number(document.getElementById("goal").value) || 10, use_llm: document.getElementById("usellm").checked } }); toast("Settings saved");
   };
+});
+
+/* ---------- about & guide ---------- */
+route(/^\/about$/, "about", async () => {
+  if (!state.llm) { try { state.llm = await api("/llm"); } catch (e) { /* shown as not configured */ } }
+  $app.innerHTML = `<article class="about">
+    <h1>About StudyLoop</h1>
+    <nav class="toc small" aria-label="On this page">${[["what", "What it is"], ["does", "What it does"], ["use", "How to use it"], ["not", "What it does not do"], ["privacy", "Privacy"], ["vision", "Vision and goal"], ["maker", "About the maker"]].map(([id, t]) => `<a href="#/about" data-jump="${id}">${t}</a>`).join("")}</nav>
+
+    <section class="card" id="what"><h2>What it is</h2>
+      <p>StudyLoop turns a textbook, a web page or your own notes into a tutor that runs on your own computer. You give it a PDF, a markdown, text or HTML file, a web address or pasted text. It builds a course from it, answers your questions using only that text, quizzes you, and keeps track of what you know. It needs no account and no GPU, and it works without any language model.</p></section>
+
+    <section class="card" id="does"><h2>What it does</h2><ul class="plain">
+      <li><a href="#/library"><strong>Library</strong></a>: imports PDF, markdown, text, HTML, a web address or pasted text and converts it to clean notes.</li>
+      <li><a href="#/library"><strong>Course</strong></a>: splits each book into chapters, topics and key concepts (open a book from the Library to see its outline).</li>
+      <li><a href="#/ask"><strong>Ask the book</strong></a>: answers in English, Urdu or Roman Urdu with the exact quote and its line in the source, or says the book does not cover it.</li>
+      <li><a href="#/library"><strong>Quizzes</strong></a>: cloze, multiple-choice and true/false questions per topic, built from the book's own sentences (open a topic and press Start quiz).</li>
+      <li><a href="#/review"><strong>Review</strong></a>: shows what to revise next and a spaced-review schedule, from a Bayesian Knowledge Tracing estimate per topic.</li>
+      <li><a href="#/memory"><strong>Memory</strong></a>: notes, question history, sessions and settings, all searchable; notes export as markdown and quiz cards as CSV for Anki.</li>
+      <li><a href="#/"><strong>Dashboard</strong></a>: progress, streak, answer accuracy and a try-it panel that runs the real app on the sample book.</li></ul></section>
+
+    <section class="card" id="use"><h2>How to use it</h2>
+      <h3>1. Add a book (<a href="#/library">Library</a>)</h3>
+      <ul>
+        <li><strong>Upload a file</strong>: click the drop box and choose a file, or drag one onto it. Accepted: .pdf, .md, .markdown, .txt, .html, .htm. One file at a time, up to 60 MB. A PDF needs a text layer (no OCR) and at most 3,000 pages. Output: a book card that says "converting" for a few seconds, then shows chapters and words.</li>
+        <li><strong>Web address</strong>: paste one <code>https://…</code> article link and press Add (up to 20 MB, needs internet, private and local addresses are refused). You can also drag a link onto the drop box.</li>
+        <li><strong>Paste text</strong>: paste notes or an article. Lines starting with <code>#</code> or <code>##</code> become chapters and topics. Lines such as "Chapter 3" or ALL-CAPS headings are also recognised in plain text.</li>
+        <li>Every input has a "Load example" link, and "Load the sample book" adds Faraday's <em>The Chemical History of a Candle</em> so you can try everything first.</li></ul>
+      <h3>2. Read the course</h3>
+      <p>Open a book to see its chapters and topics. A topic page shows the text, key concepts and a box for your notes.</p>
+      <h3>3. Ask (<a href="#/ask">Ask the book</a>)</h3>
+      <p>Choose a book and type one question (up to 1,000 characters), for example <em>What is capillary attraction?</em>, <em>موم بتی کیوں جلتی ہے؟</em> or <em>pani kaise banta hai</em>. Output: the best matching sentences with their location, an "Open in the book" link that highlights the quote, or "the book does not say". To ask about your own passage, paste it as text in the Library first; it becomes a small book.</p>
+      <h3>4. Take a quiz</h3>
+      <p>On a topic page press Start quiz. Type the missing word, pick an option, or choose true or false. Output: right or wrong at once, the source sentence, and an updated mastery level for that topic.</p>
+      <h3>5. Review (<a href="#/review">Review</a>)</h3>
+      <p>Follow "What to review next" and the schedule (overdue, today, this week, later). A topic counts as mastered only at P(known) of 0.95 or more after at least 8 answers with 6 of the last 8 right.</p></section>
+
+    <section class="card" id="not"><h2>What it does not do</h2><ul>
+      <li>No OCR: a scanned PDF with no text layer is rejected with a message.</li>
+      <li>PDF structure is only as good as the PDF; unusual fonts can give one flat chapter, which is then cut by topic cohesion.</li>
+      <li>Urdu support is for questions, not for books. An Urdu-language book is not indexed properly, and the question mapping is a small study glossary plus sound matching, not a translator.</li>
+      <li>The extractive answer is not a summary: it returns the best-matching sentences verbatim.</li>
+      <li>Key concepts and quiz sentences are heuristics; some are odd, and questions test recognition of the text, not transfer.</li>
+      <li>The mastery estimate uses fixed starting parameters, not ones fitted to you.</li>
+      <li>One user on one machine: no accounts, no sync, no login.</li>
+      <li>No model is bundled. The optional model path was tested against fakes and failure cases, not against a live model.</li></ul></section>
+
+    <section class="card" id="privacy"><h2>Privacy</h2><ul>
+      <li><strong>Stored on your computer</strong>: your books, progress, notes, question history and settings are in one SQLite file (<code>~/.studyloop/studyloop.sqlite3</code>, or where <code>STUDYLOOP_HOME</code> points). Deleting a book in the Library removes its progress, notes and history.</li>
+      <li><strong>Never leaves the machine</strong> by default: uploaded files, pasted text, questions and answers. The server answers only requests addressed to localhost. The page loads no outside scripts or fonts.</li>
+      <li><strong>Goes out only when you ask</strong>: a web address you import is fetched from that site.</li>
+      <li><strong>Only if a model is configured</strong> (<code>STUDYLOOP_LLM</code> set to ollama, anthropic or openai before launching, and the "Use the language model" switch in Memory is on): your question and the retrieved passages, and for quizzes the topic text, are sent to that model. With Ollama on localhost that stays on your machine; with Anthropic or OpenAI it goes to that provider. This build ${state.llm && state.llm.configured ? "<strong>has a model configured</strong> (" + esc(state.llm.provider) + ")." : "has no model configured."}</li></ul></section>
+
+    <section class="card" id="vision"><h2>Vision and goal</h2>
+      <p>The goal is a study tool you can trust because it shows its evidence: every answer is a quote you can find in your own book, and it says so when the book does not cover a question. It should work on an ordinary laptop with no account, in the languages its users actually ask in.</p>
+      <p>Next, from the known gaps in the project's review notes:</p>
+      <ul><li>OCR for scanned PDFs.</li><li>EPUB import.</li><li>Flashcard review inside the app (today cards export as CSV).</li><li>Shareable course export, and backup and restore.</li><li>Urdu-language books, not only Urdu questions.</li></ul></section>
+
+    <section class="card" id="maker"><h2>About the maker</h2>
+      <p>Built by Muhammad Hammas, an AI engineer. More projects: <a href="https://github.com/hammasbuilds" target="_blank" rel="noopener">github.com/hammasbuilds</a>. This project: <a href="https://github.com/hammasbuilds/studyloop" target="_blank" rel="noopener">github.com/hammasbuilds/studyloop</a>.</p></section>
+  </article>`;
+  $app.querySelectorAll("[data-jump]").forEach((a) => (a.onclick = (e) => { e.preventDefault(); document.getElementById(a.dataset.jump).scrollIntoView({ behavior: "smooth" }); }));
 });
 
 /* ---------- boot ---------- */

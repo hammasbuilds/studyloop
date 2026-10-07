@@ -293,3 +293,34 @@ def test_ask_preview_is_not_logged(client):
     assert client.get(f"/api/history?book_id={bid}").json() == []
     client.post("/api/ask", json={"book_id": bid, "question": "What is hydrogen?"})
     assert len(client.get(f"/api/history?book_id={bid}").json()) == 1
+
+
+def test_pasted_markdown_keeps_its_headings(client):
+    """The Library's "Load example" text has a heading directly above its paragraph."""
+    text = "# Rivers\n\n## Springs\nA spring is where water leaves the ground.\n\n## Mouth\nA river ends at its mouth."
+    r = client.post("/api/books", data={"text": text})
+    b = client.get(f"/api/books/{r.json()['id']}").json()
+    assert b["title"] == "Rivers"
+    md = client.get(f"/api/books/{r.json()['id']}/markdown").text
+    assert "## Springs\n" in md and "## Mouth\n" in md
+
+
+def test_every_input_route_reports_clear_errors(client):
+    assert client.post("/api/books", data={"url": "ftp://example.org/x"}).status_code == 400
+    assert client.post("/api/books").status_code == 400
+    _upload(client, name="photo.png", data=b"not an image, just bytes")
+    assert "unsupported file type '.png'" in client.get("/api/books").json()[0]["error"]
+    client.post("/api/books", files={"file": ("empty.txt", b"")})
+    assert client.get("/api/books").json()[0]["error"] == "the file is empty"
+
+
+def test_about_page_is_wired_into_the_app(client):
+    html = client.get("/").text
+    assert 'href="#/about"' in html and 'id="help"' in html
+    js = client.get("/app.js").text
+    for section in ("What it is", "What it does", "How to use it", "What it does not do", "Privacy",
+                    "Vision and goal", "About the maker"):
+        assert section in js
+    assert "github.com/hammasbuilds" in js and "@" not in js.split("About the maker")[1].split("</section>")[0]
+    for hook in ('id="exfile"', 'id="exurl"', 'id="extext"', "dataTransfer"):
+        assert hook in js

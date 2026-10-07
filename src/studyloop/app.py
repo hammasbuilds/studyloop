@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import threading
 from collections.abc import Iterator
@@ -263,7 +264,9 @@ def create_app(
             body = text.encode("utf-8")
             if len(body) > ingest.MAX_UPLOAD:
                 raise HTTPException(413, "text is larger than 60 MB")
-            name = (title or "Pasted text") + ".txt"
+            # pasted markdown (lines starting with #) is kept as markdown; anything else is plain text
+            looks_md = re.search(r"^#{1,3} \S", text, re.M) is not None
+            name = (title or "Pasted text") + (".md" if looks_md else ".txt")
             return _start_import(
                 con, title or "Pasted text", "upload", "pasted text",
                 lambda: ingest.convert_upload(name, body, title), title,

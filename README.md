@@ -22,6 +22,18 @@ The home page has a live **try-it panel**: type a question about the book (Engli
 | **Memory** | SQLite: progress, notes, question history, sessions and versioned settings; searchable. |
 | **Urdu / Roman Urdu** | Questions are normalised (urdunlp), mapped to English search terms through a small study glossary, English words kept, loanwords matched by sound. |
 
+## Inputs
+
+| Feature | File upload | Drag and drop | Paste | Hint and example |
+|---|---|---|---|---|
+| Library (add a book) | file picker: PDF, .md, .txt, .html, up to 60 MB, with a progress bar | onto the drop box (one file; a dragged link or text is also taken) | web address, or text (markdown headings kept) | each input shows what it expects and has "Load example"; wrong type, size or empty file is refused in the browser with a clear message |
+| Ask the book | not applicable | not applicable | one question, up to 1,000 characters | example chips; to ask about your own passage, paste it as text in the Library, where it becomes a book |
+| Notes | not applicable | not applicable | typed or pasted on a topic page | none |
+
+The app also has an **About** page (nav entry and "?" in the header): what it is, how to use each input, limits, privacy, roadmap, the maker.
+
+![About](docs/screenshots/22-about.png)
+
 ## Run it
 
 ```
@@ -43,7 +55,7 @@ With a model, answers are written in prose and quizzes can add model-written que
 Tests and checks:
 
 ```
-uv run pytest -q            # 150 tests
+uv run pytest -q            # 153 tests
 uv run ruff check .
 uv run python demo.py       # offline end-to-end demo (output below)
 uv run python scripts/ask_check.py
@@ -128,7 +140,7 @@ Every number below is printed by the code in this repository.
 | Quiz pool for the sample (rule-based, all 26 topics) | 381 questions: 125 cloze, 125 multiple choice, 131 true/false; 3 to 21 per topic, none without |
 | Ask, on-book (26 questions, "What does the book say about X?", X = each topic's top concept) | 26 answered, 26 with a cited quote containing the concept's words. This is easy by construction: the question is built from the text. |
 | Ask, off-book (24 questions the book cannot answer, `scripts/ask_check.py`) | 24 abstained. Before the phrase check one of the first 20 was answered ("What is the boiling point of mercury?"); the other 4 were added after the fix, so 24/24 is partly tuned and partly unseen. |
-| Tests | 150 passing, ruff clean |
+| Tests | 153 passing, ruff clean |
 | UI tour in a real browser | uploads a markdown file, a PDF and a web page; plays quizzes; asks in three languages; opens a quote; changes settings; deletes a book. No console error or failed request. |
 
 ## Security (2026-10 review, details in [docs/REVIEW.md](docs/REVIEW.md))
@@ -182,7 +194,7 @@ src/studyloop/
   static/        the single-page app (HTML, CSS, JS; no build step)
   sample/        Faraday, The Chemical History of a Candle (public domain)
   _vendor/       read-only copies, see NOTICE
-tests/           150 tests: units for every module, API tests for every endpoint
+tests/           153 tests: units for every module, API tests for every endpoint
 scripts/         ui_tour.py, xss_check.py, ask_check.py, make_icon.py, prepare_sample.py
 ```
 
