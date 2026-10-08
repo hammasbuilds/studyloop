@@ -4,6 +4,8 @@ Turn any textbook or web page into a personal tutor that runs on your own comput
 
 You add a PDF, a markdown or text file, or a web address. StudyLoop converts it to clean notes, builds a navigable course (chapters, topics, key concepts), answers questions using only the book and shows exactly where every quote sits in the source, quizzes you topic by topic, tracks what you know with Bayesian Knowledge Tracing, tells you what to review next, and remembers your progress, notes and questions between sessions. Questions can be asked in English, Urdu or Roman Urdu.
 
+**Showcase page:** [studyloop-iota.vercel.app](https://studyloop-iota.vercel.app) shows every feature as captioned screenshots. The app itself runs on your own computer (see Run it).
+
 ## What it does
 
 - **Library**: add a PDF, markdown, text or HTML file, paste text, or import a web address (from [book-to-skill](../book-to-skill) and [web-to-markdown](../web-to-markdown)).
