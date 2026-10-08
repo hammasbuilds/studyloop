@@ -21,6 +21,8 @@ function toast(msg) {
   clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove("show"), 3200);
 }
 const pct = (x) => Math.round((x || 0) * 100);
+/* "1 chapter", "2 chapters", "1,204 words": every count shown on a page goes through this */
+const pl = (n, one, many) => `${Number(n || 0).toLocaleString()} ${Number(n) === 1 ? one : many || one + "s"}`;
 function when(days) {
   if (days == null) return "";
   const a = Math.abs(days), sign = days < 0 ? "ago" : "";
@@ -289,10 +291,10 @@ route(/^\/$/, "home", async () => {
     <div class="row" style="margin-bottom:14px"><h2 style="margin:0;font-size:1.5rem">Your progress</h2><a class="btn right" href="#/library">+ Add a book</a></div>
     <div class="stats">
       <div class="stat ringstat">${ringSvg(t.topics ? (t.mastered / t.topics) * 100 : 0, 64, "topics mastered")}<div><div class="v">${t.mastered}<span class="muted" style="font-size:1rem">/${t.topics}</span></div><div class="l">topics mastered</div></div></div>
-      <div class="stat"><div class="v">${t.due}</div><div class="l">reviews due now</div></div>
-      <div class="stat"><div class="v">${a.streak}</div><div class="l">day streak</div></div>
+      <div class="stat"><div class="v">${t.due}</div><div class="l">${t.due === 1 ? "review" : "reviews"} due now</div></div>
+      <div class="stat"><div class="v">${a.streak}</div><div class="l">${a.streak === 1 ? "day" : "days"} streak</div></div>
       <div class="stat"><div class="v">${a.accuracy == null ? "–" : pct(a.accuracy) + "%"}</div><div class="l">answer accuracy</div></div>
-      <div class="stat"><div class="v">${t.questions_asked}</div><div class="l">questions asked</div></div>
+      <div class="stat"><div class="v">${t.questions_asked}</div><div class="l">${t.questions_asked === 1 ? "question" : "questions"} asked</div></div>
     </div>
     <div class="grid cols-2">
       <section class="card"><h2>What to review next</h2>
@@ -305,7 +307,7 @@ route(/^\/$/, "home", async () => {
       <section class="card"><div class="row"><h2 style="margin:0">Answers, last 14 days</h2><span class="small muted right">goal ${d.daily_goal}/day · today ${a.today}</span></div>
         <div class="chart">${chart}<div class="goal" style="bottom:${goalBottom}%" title="daily goal"></div></div>
         <div class="bar big" style="margin-top:14px" title="today vs goal"><i style="width:${Math.min(100, (a.today / d.daily_goal) * 100)}%"></i></div>
-        <p class="small muted">${a.today >= d.daily_goal ? "Daily goal reached." : `${d.daily_goal - a.today} more answers to reach today's goal.`}</p>
+        <p class="small muted">${a.today >= d.daily_goal ? "Daily goal reached." : `${pl(d.daily_goal - a.today, "more answer", "more answers")} to reach today's goal.`}</p>
       </section>
     </div>
     <h2 style="margin-top:24px">Your books</h2>
@@ -316,7 +318,7 @@ function bookCard(b) {
   if (b.status !== "ready") return `<div class="card book-card"><h3>${esc(b.title)}</h3><p class="${b.status === "error" ? "" : "muted"}">${b.status === "error" ? "Import failed: " + esc(b.error) : '<span class="spinner"></span> Processing…'}</p><button class="btn danger small" data-del="${b.id}">Remove</button></div>`;
   const p = b.progress, share = p.topics ? (p.mastered / p.topics) * 100 : 0;
   return `<div class="card book-card"><div class="row">${ringSvg(share, 68, "topics mastered")}
-      <div><h3><a href="#/book/${b.id}">${esc(b.title)}</a></h3><div class="small muted">${b.chapters} chapters · ${p.topics} topics · ${b.n_words.toLocaleString()} words</div></div></div>
+      <div><h3><a href="#/book/${b.id}">${esc(b.title)}</a></h3><div class="small muted">${pl(b.chapters, "chapter")} · ${pl(p.topics, "topic")} · ${pl(b.n_words, "word")}</div></div></div>
     ${bar(p.avg_known)}<div class="small muted">${p.practised}/${p.topics} practised · ${p.mastered} mastered · ${p.due ? `<strong style="color:var(--bad)">${p.due} due</strong>` : "none due"}</div>
     <div class="row"><a class="btn small" href="#/book/${b.id}">Course</a><a class="btn secondary small" href="#/ask/${b.id}">Ask</a></div></div>`;
 }
@@ -371,7 +373,7 @@ route(/^\/library$/, "library", async () => {
   ["dragleave", "drop"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove("over"); }));
   drop.addEventListener("drop", (e) => {
     const files = e.dataTransfer.files;
-    if (files.length > 1) { setMsg("Drop one file at a time (you dropped " + files.length + ")."); return; }
+    if (files.length > 1) { setMsg("Drop one file at a time (you dropped " + pl(files.length, "file") + ")."); return; }
     if (files.length === 1) { upload(files[0]); return; }
     const link = (e.dataTransfer.getData("text/uri-list") || "").split("\n")[0].trim();
     if (/^https?:\/\//i.test(link)) { url.value = link; upload(null, link); return; }
@@ -387,7 +389,7 @@ route(/^\/library$/, "library", async () => {
   document.getElementById("exfile").onclick = () => upload(new File([EXAMPLE_MD], "how-a-river-forms.md", { type: "text/markdown" }));
   document.getElementById("exurl").onclick = () => { url.value = EXAMPLE_URL; url.focus(); setMsg("Example address filled in. Press Add to import it (needs internet)."); };
   document.getElementById("extext").onclick = () => { pasted.value = EXAMPLE_MD; updateCount(); pasted.focus(); };
-  const updateCount = () => { const n = (pasted.value.match(/\S+/g) || []).length; document.getElementById("count").textContent = n ? n.toLocaleString() + " words" : ""; };
+  const updateCount = () => { const n = (pasted.value.match(/\S+/g) || []).length; document.getElementById("count").textContent = n ? pl(n, "word") : ""; };
   pasted.addEventListener("input", updateCount);
   wireDelete(); pollBooks(books);
 });
@@ -395,7 +397,7 @@ function setMsg(t) { const m = document.getElementById("msg"); if (m) m.textCont
 function booksList(books) {
   if (!books.length) return `<p class="muted">No books yet. Drop a PDF, markdown, text or HTML file on the box, paste a web address, or paste text, then wait a few seconds while it is converted. Or load the sample book to try everything first.</p>`;
   return books.map((b) => `<div class="li"><div class="main"><strong>${b.status === "ready" ? `<a href="#/book/${b.id}">${esc(b.title)}</a>` : esc(b.title)}</strong>
-    <div class="small muted">${b.status === "ready" ? `${b.chapters} chapters · ${b.n_words.toLocaleString()} words · ${esc(b.source_type)}` : b.status === "error" ? "Failed: " + esc(b.error) : '<span class="spinner"></span> converting…'}</div></div>
+    <div class="small muted">${b.status === "ready" ? `${pl(b.chapters, "chapter")} · ${pl(b.n_words, "word")} · ${esc(b.source_type)}` : b.status === "error" ? "Failed: " + esc(b.error) : '<span class="spinner"></span> converting…'}</div></div>
     <button class="btn danger small" data-del="${b.id}">Delete</button></div>`).join("");
 }
 function wireDelete() {
@@ -410,8 +412,16 @@ function pollBooks(books) {
     if (!location.hash.startsWith("#/library")) return;
     const fresh = await api("/books"); const el = document.getElementById("books");
     if (el) { el.innerHTML = booksList(fresh); wireDelete(); }
-    pollBooks(fresh);
+    importFinished(fresh); pollBooks(fresh);
   }, 1500);
+}
+/* the message under the form says what became of the book just added, once it is known */
+function importFinished(books) {
+  const b = books.find((x) => x.id === state.pending);
+  if (!b || b.status === "processing") return;
+  state.pending = null;
+  if (b.status === "ready") { setMsg(`Added "${b.title}": ${pl(b.chapters, "chapter")}, ${pl(b.n_words, "word")}.`); toast(`"${b.title}" is ready`); }
+  else { setMsg(`Could not add "${b.title}": ${b.error || "conversion failed"}`); toast("Import failed"); }
 }
 function uploadError(file) {
   const ext = (file.name.match(/\.[^.]+$/) || [""])[0].toLowerCase();
@@ -442,8 +452,9 @@ async function upload(file, url, text) {
   msg.innerHTML = `<span class="spinner"></span> ${file ? "Uploading " + esc(file.name) + "…" : "Sending…"}`;
   prog.hidden = false; prog.firstElementChild.style.width = "0%";
   try {
-    await postForm(form, (f) => { prog.firstElementChild.style.width = Math.round(f * 100) + "%"; });
-    msg.textContent = "Converting in the background…"; toast("Import started"); fx.flash(btn, true); render();
+    const d = await postForm(form, (f) => { prog.firstElementChild.style.width = Math.round(f * 100) + "%"; });
+    fx.flash(btn, true); state.pending = d && d.id; await render();
+    setMsg("Converting in the background…"); importFinished(await api("/books")); // may already be done
   } catch (e) { msg.textContent = "Could not add: " + e.message; fx.flash(btn, false); prog.hidden = true; }
 }
 /* a file dropped outside the drop zone must not make the browser open it and leave the app */
@@ -464,15 +475,15 @@ route(/^\/book\/(\d+)$/, "library", async (m) => {
     <div class="row" style="margin-bottom:6px"><a href="#/">← Dashboard</a></div>
     <div class="row"><h1 style="margin:0">${esc(b.title)}</h1><a class="btn right" href="#/ask/${b.id}">Ask this book</a>
       <a class="btn secondary" href="/api/books/${b.id}/notes.md" download>Export my notes</a>
-      <a class="btn secondary" href="/api/books/${b.id}/flashcards.csv" download title="One card per concept the book defines; imports into Anki">Flashcards (CSV)</a>
+      <a class="btn secondary" href="/api/books/${b.id}/flashcards.csv" download title="One card per key concept the book defines or describes; imports into Anki">Flashcards (CSV)</a>
       <a class="btn secondary" href="/api/books/${b.id}/markdown" target="_blank" rel="noopener">Book text</a></div>
-    <p class="muted">${b.chapters} chapters · ${p.topics} topics · ${b.n_words.toLocaleString()} words · ${esc(b.source_type)}${b.meta.author ? " · " + esc(b.meta.author) : ""}${b.meta.licence ? " · " + esc(b.meta.licence) : ""}</p>
+    <p class="muted">${pl(b.chapters, "chapter")} · ${pl(p.topics, "topic")} · ${pl(b.n_words, "word")} · ${esc(b.source_type)}${b.meta.author ? " · " + esc(b.meta.author) : ""}${b.meta.licence ? " · " + esc(b.meta.licence) : ""}</p>
     <div class="stats"><div class="stat"><div class="v">${p.mastered}/${p.topics}</div><div class="l">mastered</div></div>
       <div class="stat"><div class="v">${p.practised}</div><div class="l">practised</div></div>
       <div class="stat"><div class="v">${p.due}</div><div class="l">due for review</div></div>
       <div class="stat"><div class="v">${pct(p.avg_known)}%</div><div class="l">average knowledge</div></div></div>
     <div class="outline">${b.course.map((c, ci) => `<details class="chapter" ${ci < 2 || c.topics.some((t) => t.mastery.due) ? "open" : ""}>
-      <summary>${esc(c.title)}<span class="small muted right">${c.topics.length} topic${c.topics.length === 1 ? "" : "s"}</span></summary>
+      <summary>${esc(c.title)}<span class="small muted right">${pl(c.topics.length, "topic")}</span></summary>
       <div class="card flat" style="margin-top:6px;padding:4px 8px">${c.topics.map(topicRow).join("")}</div></details>`).join("")}</div>`;
 });
 function topicRow(t) {
@@ -480,7 +491,7 @@ function topicRow(t) {
   return `<div class="topic-row"><div><a class="t" href="#/topic/${t.id}">${esc(t.title)}</a> ${m.due ? '<span class="pill due">due</span>' : ""}
       ${t.summary ? `<div class="sum">${esc(t.summary.length > 180 ? t.summary.slice(0, 177) + "…" : t.summary)}</div>` : ""}
       <div>${t.concepts.slice(0, 6).map((c) => `<span class="chip static" title="${c.definition ? esc(c.definition) : ""}">${esc(c.term)}</span>`).join("")}</div></div>
-    <div>${pillFor(m.level)} <span class="small muted">${t.n_words} words</span>${bar(m.attempts ? m.p_known : 0)}
+    <div>${pillFor(m.level)} <span class="small muted">${pl(t.n_words, "word")}</span>${bar(m.attempts ? m.p_known : 0)}
       <div class="small muted">${m.attempts ? `knows ${pct(m.p_known)}% · ${m.correct}/${m.attempts} right` : "not started"}</div>
       <a class="btn small" style="margin-top:6px" href="#/topic/${t.id}?quiz=1">Quiz</a></div></div>`;
 }
@@ -494,7 +505,7 @@ route(/^\/topic\/(\d+)$/, "library", async (m, params) => {
     <div class="row" style="margin-bottom:6px"><a href="#/book/${t.book_id}">← ${esc(t.book)}</a><span class="muted">/ ${esc(t.chapter)}</span></div>
     <div class="layout"><div>
       <h1>${esc(t.title)}</h1>
-      <div class="row small muted" style="margin-bottom:10px">${pillFor(t.mastery.level)} <span>${t.n_words} words</span>
+      <div class="row small muted" style="margin-bottom:10px">${pillFor(t.mastery.level)} <span>${pl(t.n_words, "word")}</span>
         ${t.prev ? `<a href="#/topic/${t.prev.id}">← ${esc(t.prev.title)}</a>` : ""}${t.next ? `<a class="right" href="#/topic/${t.next.id}">${esc(t.next.title)} →</a>` : ""}</div>
       ${t.summary ? `<div class="card flat" style="margin-bottom:14px"><strong>In short.</strong> ${esc(t.summary)}</div>` : ""}
       <div class="card flat" style="margin-bottom:14px"><strong>Key concepts</strong><div style="margin-top:6px">${t.concepts.map((c) => `<a class="chip" href="#/ask/${t.book_id}?q=${encodeURIComponent("What does the book say about " + c.term + "?")}" title="${c.definition ? esc(c.definition) : "ask about " + esc(c.term)}">${esc(c.term)}</a>`).join("") || '<span class="muted">none found</span>'}</div></div>
@@ -526,8 +537,9 @@ function wireNotes() {
 }
 function quizIntro(t) {
   const m = t.mastery;
+  if (!t.n_questions) { document.getElementById("quizbox").innerHTML = noQuestions(t); return; }
   document.getElementById("quizbox").innerHTML = `<h2>Quiz this topic</h2>
-    <p class="muted small">${t.n_questions} questions from the text: fill-in-the-blank, multiple choice and true/false. Answers are graded here and update your knowledge estimate.</p>
+    <p class="muted small">${pl(t.n_questions, "question")} from the text: fill-in-the-blank, multiple choice and true/false. Answers are graded here and update your knowledge estimate.</p>
     <div class="row small">${pillFor(m.level)}<span class="muted">${m.attempts ? `knows ${pct(m.p_known)}% · recall now ${pct(m.recall)}%` : "not started"}</span></div>
     ${bar(m.attempts ? m.p_known : 0, true)}
     <p class="small muted">${m.due_in_days == null ? "" : "Next review " + when(m.due_in_days)}</p>
@@ -535,13 +547,19 @@ function quizIntro(t) {
     ${state.llm?.configured ? `<button class="btn secondary" id="genq" title="Ask the configured model for extra questions; each is kept only if its quote is in the text">+ Model questions</button>` : ""}</p>`;
   document.getElementById("startq").onclick = () => startQuiz(t);
   const g = document.getElementById("genq");
-  if (g) g.onclick = async () => { g.disabled = true; try { const r = await api(`/topics/${t.id}/quiz/generate`, { method: "POST" }); toast(`${r.added} added, ${r.rejected} rejected${r.error ? " (" + r.error + ")" : ""}`); } catch (e) { toast(e.message); } g.disabled = false; };
+  if (g) g.onclick = async () => { g.disabled = true; try { const r = await api(`/topics/${t.id}/quiz/generate`, { method: "POST" }); toast(`${pl(r.added, "question")} added, ${r.rejected} rejected${r.error ? " (" + r.error + ")" : ""}`); } catch (e) { toast(e.message); } g.disabled = false; };
   if (!state.llm) api("/llm").then((l) => { state.llm = l; if (l.configured) quizIntro(t); }).catch(() => {});
 }
 async function startQuiz(t) {
   const r = await api(`/topics/${t.id}/quiz?n=6`);
+  const box = document.getElementById("quizbox"); if (!box) return;
+  if (!r.questions.length) { box.innerHTML = noQuestions(t); return; }
   state.quiz = { topic: t, qs: r.questions, i: 0, right: 0, done: 0 };
   showQuestion();
+}
+function noQuestions(t) {
+  return `<h2>Quiz this topic</h2><p class="muted">This topic is too short to make questions from: no sentence of 9 to 34 words here names one of its key concepts. Read it, then quiz the next topic.</p>
+    ${t.next ? `<p><a class="btn" href="#/topic/${t.next.id}?quiz=1">Quiz the next topic: ${esc(t.next.title)}</a></p>` : ""}`;
 }
 function showQuestion() {
   const z = state.quiz, box = document.getElementById("quizbox");
@@ -639,7 +657,7 @@ function answerHtml(r) {
   if (!r.answered) return `${understood}<div class="answer-box none"><strong>The book does not say.</strong> ${esc(r.message.replace(/^The book does not say\.\s*/, "") || "No passage covers that question.")}
       ${r.related.length ? `<div class="small" style="margin-top:8px">Closest topics: ${r.related.map((x) => `<a href="#/topic/${x.topic_id}">${esc(x.topic)}</a>`).join(", ")}</div>` : ""}</div>`;
   const mode = r.mode.startsWith("llm") ? `written by ${esc(r.mode.slice(4))}, every quote checked against the book` : "extractive: the book's own sentences";
-  return `${understood}<div class="answer-box"><div class="small muted" style="margin-bottom:6px">${mode}${r.dropped_quotes ? ` · ${r.dropped_quotes} unverifiable quote(s) dropped` : ""}</div>
+  return `${understood}<div class="answer-box"><div class="small muted" style="margin-bottom:6px">${mode}${r.dropped_quotes ? ` · ${pl(r.dropped_quotes, "unverifiable quote")} dropped` : ""}</div>
     ${r.mode.startsWith("llm") ? esc(r.answer) : r.citations.map((c) => `${esc(c.quote)} <sup>[${c.n}]</sup>`).join(" ")}</div>
     <h3 style="margin-top:14px">Sources</h3>${r.citations.map((c) => `<div class="cite"><div class="quote" style="margin:0">${esc(c.quote)}</div>
       <div class="where"><strong>[${c.n}]</strong> ${esc(c.chapter || "")} › ${esc(c.topic || "")} · line ${c.line} · characters ${c.start}–${c.end} · <span title="the quote was found at exactly these offsets in the book">verified</span>
@@ -671,7 +689,7 @@ route(/^\/memory$/, "memory", async () => {
     <div class="card" style="margin-bottom:16px"><div class="row"><input type="text" id="mq" placeholder="Search your notes and past questions…" aria-label="Search memory" style="flex:1"><button class="btn" id="msearch">Search</button></div><div id="mres"></div></div>
     <div class="grid cols-wide"><section class="card"><h2>Notes (${notes.length})</h2>${notes.length ? notes.map((n) => `<div class="cite"><div>${esc(n.text).replace(/\n/g, "<br>")}</div><div class="where">${esc(n.book || "")} › <a href="#/topic/${n.topic_id}">${esc(n.topic || "book")}</a> · ${dt(n.updated)}</div></div>`).join("") : '<p class="muted">Notes you write on a topic page show up here. Open a book from the <a href="#/library">Library</a> to start.</p>'}</section>
     <section class="card"><h2>Question history</h2>${histHtml(hist)}</section>
-    <section class="card"><h2>Sessions</h2>${sess.map((s) => `<div class="li"><div class="main">${dt(s.started)}</div><span class="small muted">${s.questions} questions · ${s.answers} quiz answers</span></div>`).join("") || '<p class="muted">None yet.</p>'}</section>
+    <section class="card"><h2>Sessions</h2>${sess.map((s) => `<div class="li"><div class="main">${dt(s.started)}</div><span class="small muted">${pl(s.questions, "question")} · ${pl(s.answers, "quiz answer")}</span></div>`).join("") || '<p class="muted">None yet.</p>'}</section>
     <section class="card stack"><h2>Settings</h2>
       <div><label for="goal">Daily goal (answers per day)</label><input type="number" id="goal" min="1" max="500" value="${settings.daily_goal}"></div>
       <div class="switch"><input type="checkbox" id="usellm" ${settings.use_llm ? "checked" : ""}><label for="usellm" style="margin:0">Use the language model for answers when one is configured</label></div>
@@ -680,7 +698,7 @@ route(/^\/memory$/, "memory", async () => {
   const doSearch = async () => {
     const q = document.getElementById("mq").value.trim(); if (!q) return;
     const r = await api("/memory/search?q=" + encodeURIComponent(q));
-    document.getElementById("mres").innerHTML = r.length ? r.map((x) => `<div class="cite"><span class="pill">${x.type}</span> ${esc(x.type === "question" ? x.question : x.text)}<div class="where">${esc(x.book || "")} · ${dt(x.ts)} · score ${x.score}</div></div>`).join("") : '<p class="muted">Nothing matches.</p>';
+    document.getElementById("mres").innerHTML = r.length ? r.map((x) => `<div class="cite"><span class="pill">${x.type}</span> ${esc(x.type === "question" ? x.question : x.text)}<div class="where">${esc(x.book || "")} · ${x.count > 1 ? `asked ${x.count} times, last ` : ""}${dt(x.ts)} · score ${x.score}</div></div>`).join("") : '<p class="muted">Nothing matches.</p>';
   };
   document.getElementById("msearch").onclick = doSearch; document.getElementById("mq").onkeydown = (e) => e.key === "Enter" && doSearch();
   document.getElementById("save").onclick = async () => {

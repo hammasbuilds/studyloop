@@ -19,7 +19,7 @@ You add a PDF, a markdown or text file, or a web address. StudyLoop converts it 
 
 ## Gallery
 
-Every picture is a real screenshot of the running app, taken by [scripts/gallery.py](scripts/gallery.py) (headless Chromium, 1440x900, dark mode unless stated) from the input described in its caption. They follow the order a new user would take. Captions are also in [docs/gallery/CAPTIONS.md](docs/gallery/CAPTIONS.md).
+Every picture is a real screenshot of the running app, taken by [scripts/gallery.py](scripts/gallery.py) (headless Edge, 1440x900, dark mode unless stated) from the input described in its caption. They follow the order a new user would take. Captions are also in [docs/gallery/CAPTIONS.md](docs/gallery/CAPTIONS.md).
 
 ### Home and Try it
 
@@ -59,15 +59,15 @@ Input: the file a-small-book-of-rivers.md chosen with the file picker. Output: t
 
 ![library upload done](docs/gallery/04-library-upload-done.png)
 
-Output of the upload: the markdown file is now a book in the list with its chapters and word count.
+Output of the upload: the markdown file is now a book in the list with its chapters and word count, and the form confirms what was added.
 
 ![library paste text](docs/gallery/05-library-paste-text.png)
 
-Input: lecture notes pasted into the text box with the title "Volcanoes in brief". Output: the form reports that the text is being sent and converted.
+Input: lecture notes with two ## headings pasted into the text box with the title "Volcanoes in brief". Output: "Volcanoes in brief" in the book list with its chapters and words; the form confirms it was added.
 
 ![library import url](docs/gallery/06-library-import-url.png)
 
-Input: a web address, here a page served from this machine (the operator switch STUDYLOOP_ALLOW_PRIVATE_URLS=1 is set only for this script; normally private addresses are refused). Output: the import is accepted and converted.
+Input: a web address, here a page served from this machine (the operator switch STUDYLOOP_ALLOW_PRIVATE_URLS=1 is set only for this script; normally private addresses are refused). Output: the article "How deltas form" in the book list, its navigation and footer dropped, with the form confirming it was added.
 
 ![library all books](docs/gallery/07-library-all-books.png)
 
@@ -149,7 +149,7 @@ Output: the home page progress overview after studying: topics mastered ring, re
 
 ![memory search](docs/gallery/29-memory-search.png)
 
-Input: "capillary" typed in the memory search. Output: the past questions that matched, with their score, plus the notes and question history below.
+Input: "capillary" typed in the memory search. Output: the past questions that matched with their score; the same question asked on the home page and on the Ask page is one hit marked with how many times it was asked. The notes and question history are below.
 
 ![memory search notes](docs/gallery/30-memory-search-notes.png)
 
@@ -167,7 +167,7 @@ Input: the Export my notes button on the book page. Output: the downloaded notes
 
 ![export anki csv](docs/gallery/33-export-anki-csv.png)
 
-Input: the Flashcards (CSV) button. Output: the downloaded flashcards.csv, one card per concept the book defines (front, back, source), ready to import into Anki.
+Input: the Flashcards (CSV) button. Output: the downloaded flashcards.csv (front, back, source), ready to import into Anki: a card only for a key concept the book defines or makes the subject of a sentence, so the sample's 33,688 words give 10 cards.
 
 ### About
 
@@ -183,7 +183,11 @@ The same home page in light mode (the theme follows the system and has a toggle 
 
 ![home phone](docs/gallery/36-home-phone.png)
 
-The home page at phone width (390 px): the navigation and the try-it panel reflow to one column.
+The home page at phone width (390 px): the six navigation links wrap onto their own row under the logo so every page is one tap away, and the try-it panel reflows to one column.
+
+![library phone](docs/gallery/37-library-phone.png)
+
+The Library at phone width: the nav row, the add-a-book form in one column, and the book list below it.
 
 ## Inputs
 
@@ -216,11 +220,12 @@ With a model, answers are written in prose and quizzes can add model-written que
 Tests and checks:
 
 ```
-uv run pytest -q            # 153 tests
+uv run pytest -q            # 160 tests
 uv run ruff check .
 uv run python demo.py       # offline end-to-end demo (output below)
 uv run python scripts/ask_check.py
 uv run --with playwright python scripts/xss_check.py http://127.0.0.1:8799   # hostile book text in a real browser
+uv run --with playwright python scripts/ui_audit.py   # every control on every page at 1440 dark, 1440 light and 390 px; exits non-zero on any problem
 uv run --with playwright python scripts/gallery.py   # recreates every shot in docs/gallery/ (own server on a free port 8800-8899, temp data dir)
 uv run --with playwright python scripts/ui_tour.py http://127.0.0.1:8799 <db> docs/screenshots   # drives the real UI, regenerates the screenshots
 ```
@@ -286,10 +291,12 @@ Every number below is printed by the code in this repository.
 | Check | Result |
 |---|---|
 | Sample book import (markdown to course, concepts, passages) | 6 chapters, 26 topics, 364 passages in about 0.3 s |
-| Quiz pool for the sample (rule-based, all 26 topics) | 381 questions: 125 cloze, 125 multiple choice, 131 true/false; 3 to 21 per topic, none without |
+| Quiz pool for the sample (rule-based, all 26 topics) | 560 questions: 185 cloze, 185 multiple choice, 190 true/false; 6 to 26 per topic, none without. A round never uses one source sentence twice, so 22 of 26 topics give a full 6-question round; the two shortest give 4 and 2 |
+| Flashcards for the sample (CSV export) | 10 cards, each for a key concept the book defines ("called dips", "Water is a thing compounded of...") or makes the subject of a sentence. The earlier rule gave 41, most of them junk ("What does the book say hope is?") |
 | Ask, on-book (26 questions, "What does the book say about X?", X = each topic's top concept) | 26 answered, 26 with a cited quote containing the concept's words. This is easy by construction: the question is built from the text. |
 | Ask, off-book (24 questions the book cannot answer, `scripts/ask_check.py`) | 24 abstained. Before the phrase check one of the first 20 was answered ("What is the boiling point of mercury?"); the other 4 were added after the fix, so 24/24 is partly tuned and partly unseen. |
-| Tests | 153 passing, ruff clean |
+| Tests | 160 passing, ruff clean |
+| UI audit in a real browser (`scripts/ui_audit.py`) | Every link, button, input, select, checkbox, file input, drop zone, chip and summary on 8 pages, at 1440x900 dark, 1440x900 light and 390x844, filled or clicked with sample input, including the quiz controls that appear after each answer: 877 controls found, 877 exercised, 0 problems. Its first runs found the four bugs listed under "Screenshot review 2026-10-08" below, which is the evidence that it can find one. |
 | UI tour in a real browser | uploads a markdown file, a PDF and a web page; plays quizzes; asks in three languages; opens a quote; changes settings; deletes a book. No console error or failed request. |
 
 ## Security (2026-10 review, details in [docs/REVIEW.md](docs/REVIEW.md))
@@ -305,7 +312,7 @@ Every number below is printed by the code in this repository.
 - **PDF structure is only as good as the PDF.** book-to-skill finds chapters from font sizes; a PDF with unusual fonts may come out as one flat chapter, which StudyLoop then cuts by cohesion.
 - **Urdu support is for questions, not for books.** The book is read in English (or any language the retrieval tokeniser handles as Latin text); an Urdu book is not indexed properly. The question mapping is a glossary of 70 study words plus sound matching against the book's vocabulary, not a translator: a word it cannot resolve is shown as "not understood" rather than guessed.
 - **The extractive answer is not a summary.** It returns the best-matching sentences verbatim, so a "why" question gets the passages that talk about the subject, not a reasoned explanation. A model can write one, with verified quotes.
-- **Concepts and quiz sentences are heuristics.** Some key concepts are odd (a noun phrase picked by frequency), and some cloze blanks are answerable from context. Questions test recognition of the text you just read, not transfer.
+- **Concepts and quiz sentences are heuristics.** Words the book uses mostly as verbs or adjectives ("I hope", "is necessary") are dropped by looking at the word before each use, but there is no tagger, so some concepts are still odd ("outside", "success"), and some cloze blanks are answerable from context. Few sentences in a lecture define anything, so the flashcard export is short. Questions test recognition of the text you just read, not transfer.
 - **BKT parameters are fixed priors, not fitted.** One learner and a few answers per topic leave nothing to fit, so the knowledge estimate is a sensible default rather than a calibrated probability.
 - **Phrase check is a heuristic.** Questions of three or more content words must have two neighbouring question words close together in one passage. It stops "boiling point of mercury" matching a book that only boils mercury; a legitimate question phrased with the words far apart can now abstain.
 - **One user, one machine.** No accounts, no sync, no multi-user locking beyond SQLite's.
@@ -313,6 +320,7 @@ Every number below is printed by the code in this repository.
 
 ## Problems hit while building this
 
+- **Screenshot review 2026-10-08.** A 6-question round asked the same sentence twice (choice, then fill-in, same blank): the pool builds all three kinds on each sentence and the round picker interleaved kinds without looking at the sentence; it happened in all 26 topics. Flashcard fronts read "What does the book say hope is?" because the definition check accepted any sentence with "is a" or "called" anywhere in it. "1 chapters" in the Library. The phone nav showed three of six links. The new `scripts/ui_audit.py` then found a quiz on a topic too short for any question crashed the page (it was offered as "next new topic"), a table in a topic widened the phone page to 1,119 px, the Memory grid was 456 px wide on a 390 px phone, and list rows squeezed the question text to nothing at phone width. All fixed, with tests.
 - **Gallery pass 2026-10-08.** Driving every section found two things: pressing Start quiz and leaving the topic before the questions arrived raised a script error (the quiz box was gone); and the Memory page squeezed the question history into a narrow third column at desktop width. Both fixed.
 - **Review pass 2026-10-07.** The off-book answer above, a URL importer that fetched `http://127.0.0.1:8765/api/...` for anyone who could submit a form, an unbounded upload read, and an "Export notes" button that exported the whole book. All fixed with tests; new: notes export (markdown), flashcards (CSV for Anki, formula-safe), paste-text import, and imports interrupted by a restart now show as failed instead of "processing" forever.
 
@@ -344,8 +352,8 @@ src/studyloop/
   static/        the single-page app (HTML, CSS, JS; no build step)
   sample/        Faraday, The Chemical History of a Candle (public domain)
   _vendor/       read-only copies, see NOTICE
-tests/           153 tests: units for every module, API tests for every endpoint
-scripts/         gallery.py, ui_tour.py, xss_check.py, ask_check.py, make_icon.py, prepare_sample.py
+tests/           160 tests: units for every module, API tests for every endpoint
+scripts/         ui_audit.py, gallery.py, ui_tour.py, xss_check.py, ask_check.py, make_icon.py, prepare_sample.py
 ```
 
 Licence: MIT for the code. The sample text is in the public domain; the vendored urdunlp keeps its own MIT licence and CC BY-SA data licence in `src/studyloop/_vendor/urdunlp/`.

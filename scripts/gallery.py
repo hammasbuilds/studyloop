@@ -58,6 +58,19 @@ def shot(page, name: str, group: str, caption: str, full: bool = False, clip: di
     print("shot", fn)
 
 
+def settled(page, title: str) -> None:
+    """Wait until an import has finished: the book is listed, the form says it was added, and the
+    toast has gone, so the shot shows the outcome rather than a message from the way there."""
+    try:
+        page.wait_for_selector(f"#books a:has-text('{title}')", timeout=60000)
+    except Exception:
+        raise SystemExit(f"import of {title!r} did not finish: msg={page.inner_text('#msg')!r} books={page.inner_text('#books')!r}") from None
+    page.wait_for_function("!document.querySelector('#books .spinner')", timeout=30000)
+    page.wait_for_selector("#msg:has-text('Added')", timeout=30000)
+    page.wait_for_function("!document.querySelector('#toast.show')", timeout=10000)
+    page.wait_for_timeout(700)
+
+
 def correct_answer(prompt: str, kind: str) -> str:
     con = sqlite3.connect(DB)
     rows = con.execute("SELECT prompt, answer, kind FROM questions").fetchall()
@@ -111,10 +124,7 @@ try:
     threading.Thread(target=web.serve_forever, daemon=True).start()
 
     with sync_playwright() as p:
-        try:
-            browser = p.chromium.launch()
-        except Exception:
-            browser = p.chromium.launch(channel="msedge")
+        browser = p.chromium.launch(channel="msedge")
         ctx = browser.new_context(viewport={"width": 1440, "height": 900}, color_scheme="dark", bypass_csp=True)
         page = ctx.new_page()
         page.on("console", lambda m: problems.append(f"console {m.type}: {m.text}") if m.type == "error" else None)
@@ -141,35 +151,33 @@ try:
                 page.wait_for_timeout(50)
             held.pop().continue_()
 
+        page.wait_for_function("!document.querySelector('#toast.show')", timeout=10000)  # no stale "Sample book loaded"
+        page.wait_for_timeout(700)  # and its fade-out has finished
         page.set_input_files("#file", str(WORK / "a-small-book-of-rivers.md"))
         page.wait_for_selector("#msg:has-text('Uploading')")
         shot(page, "library-upload-file", G, "Input: the file a-small-book-of-rivers.md chosen with the file picker. Output: the upload message and progress bar while it is sent; the book is converted in the background.", full=True, wait=0)
         release()
-        page.wait_for_selector("#books a:has-text('A Small Book of Rivers')", timeout=30000)
-        page.wait_for_function("!document.querySelector('#books .spinner')", timeout=30000)
-        shot(page, "library-upload-done", G, "Output of the upload: the markdown file is now a book in the list with its chapters and word count.", full=True)
+        settled(page, "A Small Book of Rivers")
+        shot(page, "library-upload-done", G, "Output of the upload: the markdown file is now a book in the list with its chapters and word count, and the form confirms what was added.", full=True)
 
         pasted = "# Volcanoes\n\n## How a volcano erupts\n\nA volcano erupts when magma rises through the crust and escapes at the surface as lava, ash and gas. Pressure from dissolved gases drives the eruption.\n\n## Types of volcano\n\nA shield volcano is broad and gently sloping because its lava is runny, while a stratovolcano is steep because its lava is thick and sticky."
         page.fill("#title", "Volcanoes in brief")
         page.fill("#pasted", pasted)
+        page.unroute("**/api/books")
         page.click("#addtext")
-        page.wait_for_selector("#msg:has-text('Sending'), #msg:has-text('Converting')", timeout=5000)
-        shot(page, "library-paste-text", G, "Input: lecture notes pasted into the text box with the title \"Volcanoes in brief\". Output: the form reports that the text is being sent and converted.", full=True, wait=0)
-        release()
-        page.wait_for_selector("#books a:has-text('Volcanoes in brief')", timeout=30000)
-        page.wait_for_function("!document.querySelector('#books .spinner')", timeout=30000)
+        settled(page, "Volcanoes in brief")
+        page.fill("#title", "Volcanoes in brief")
+        page.fill("#pasted", pasted)  # put the input back in the box so the shot shows input and output together
+        shot(page, "library-paste-text", G, "Input: lecture notes with two ## headings pasted into the text box with the title \"Volcanoes in brief\". Output: \"Volcanoes in brief\" in the book list with its chapters and words; the form confirms it was added.", full=True)
 
         page.fill("#url", f"http://127.0.0.1:{web.server_address[1]}/article.html")
+        page.fill("#title", "")  # the paste shot put its title back in the box; the article names itself
         page.click("#addurl")
-        page.wait_for_selector("#msg:has-text('Sending'), #msg:has-text('Converting')", timeout=5000)
-        shot(page, "library-import-url", G, "Input: a web address, here a page served from this machine (the operator switch STUDYLOOP_ALLOW_PRIVATE_URLS=1 is set only for this script; normally private addresses are refused). Output: the import is accepted and converted.", full=True, wait=0)
-        release()
-        page.wait_for_selector("#books a:has-text('How deltas form')", timeout=30000)
-        page.wait_for_function("!document.querySelector('#books .spinner')", timeout=30000)
-        page.unroute("**/api/books")
+        settled(page, "How deltas form")
+        page.fill("#url", f"http://127.0.0.1:{web.server_address[1]}/article.html")
+        shot(page, "library-import-url", G, "Input: a web address, here a page served from this machine (the operator switch STUDYLOOP_ALLOW_PRIVATE_URLS=1 is set only for this script; normally private addresses are refused). Output: the article \"How deltas form\" in the book list, its navigation and footer dropped, with the form confirming it was added.", full=True)
         page.set_input_files("#file", str(WORK / "a-tiny-book.pdf"))
-        page.wait_for_selector("#books a:has-text('A Tiny Book')", timeout=30000)
-        page.wait_for_function("!document.querySelector('#books .spinner')", timeout=30000)
+        settled(page, "A Tiny Book")
         shot(page, "library-all-books", G, "Output after a markdown file, pasted text, a web page and a PDF were added: five books in the list, each with chapters, words and source type.", full=True)
 
         # refusal of a wrong file type
@@ -248,13 +256,14 @@ try:
 
         # ---------- Quiz ----------
         G = "Quiz"
-        page.goto(f"{BASE}/#/topic/{topic_ids[2]}")
+        page.goto(f"{BASE}/#/topic/{topic_ids[3]}")
         page.wait_for_selector("#startq")
         page.fill("#newnote", NOTE)
         page.click("#addnote")
         page.wait_for_selector("[data-note]")
         page.wait_for_timeout(500)
         shot(page, "topic-note", G, "Input: a note typed under a topic. Output: the note saved below the reading text, ready to appear in Memory and in the notes export.")
+        page.wait_for_function("!document.querySelector('#toast.show')", timeout=10000)  # no stale "Note saved"
         page.click("#startq")
         page.wait_for_selector(".q-prompt")
         page.wait_for_timeout(500)
@@ -277,7 +286,7 @@ try:
         page.wait_for_selector("#quizbox h2")
         shot(page, "quiz-summary", G, "Output of finishing the round: the summary with the score for this topic and the options to go again or move on.")
         # a couple more topics so Review and mastery have data
-        for k, tid in enumerate(topic_ids[3:6]):
+        for k, tid in enumerate(topic_ids[4:7]):
             page.goto(f"{BASE}/#/topic/{tid}")
             page.wait_for_selector("#startq")
             page.wait_for_timeout(800)
@@ -315,7 +324,7 @@ try:
         page.fill("#mq", "capillary")
         page.click("#msearch")
         page.wait_for_selector("#mres .cite")
-        shot(page, "memory-search", G, "Input: \"capillary\" typed in the memory search. Output: the past questions that matched, with their score, plus the notes and question history below.", full=True)
+        shot(page, "memory-search", G, "Input: \"capillary\" typed in the memory search. Output: the past questions that matched with their score; the same question asked on the home page and on the Ask page is one hit marked with how many times it was asked. The notes and question history are below.", full=True)
         page.fill("#mq", "water")
         page.click("#msearch")
         page.wait_for_function("document.querySelector('#mres .cite') && document.querySelector('#mres').innerText.includes('carbonic')")
@@ -332,14 +341,15 @@ try:
         page.wait_for_selector(".topic-row")
         for path, name, cap in (
             ("notes.md", "export-notes", "Input: the Export my notes button on the book page. Output: the downloaded notes.md, shown as received: a markdown file with the book's topics and the note written above."),
-            ("flashcards.csv", "export-anki-csv", "Input: the Flashcards (CSV) button. Output: the downloaded flashcards.csv, one card per concept the book defines (front, back, source), ready to import into Anki."),
+            ("flashcards.csv", "export-anki-csv", "Input: the Flashcards (CSV) button. Output: the downloaded flashcards.csv (front, back, source), ready to import into Anki: a card only for a key concept the book defines or makes the subject of a sentence, so the sample's 33,688 words give CARDS cards."),
         ):
             with page.expect_download() as dl:
                 page.click(f"a[href$='{path}']")
             f = dl.value
             tmp = WORK / f"dl-{path}"
             f.save_as(str(tmp))
-            text = tmp.read_text(encoding="utf-8")
+            text = tmp.read_text(encoding="utf-8-sig")
+            cap = cap.replace("CARDS", str(len(text.splitlines()) - 1))
             import html as _h
 
             sheet = ctx.new_page()
@@ -369,7 +379,11 @@ try:
         ph.goto(BASE + "/#/")
         ph.wait_for_selector("#tryout .anim")
         ph.wait_for_timeout(1500)
-        shot(ph, "home-phone", G, "The home page at phone width (390 px): the navigation and the try-it panel reflow to one column.", full=True)
+        shot(ph, "home-phone", G, "The home page at phone width (390 px): the six navigation links wrap onto their own row under the logo so every page is one tap away, and the try-it panel reflows to one column.", clip={"x": 0, "y": 0, "width": 390, "height": 844})
+        ph.goto(BASE + "/#/library")
+        ph.wait_for_selector("#books a")
+        ph.wait_for_timeout(900)
+        shot(ph, "library-phone", G, "The Library at phone width: the nav row, the add-a-book form in one column, and the book list below it.", full=True)
         browser.close()
 finally:
     if web:

@@ -2,7 +2,8 @@
 
 A concept is a word or two-word phrase that is frequent in the topic but not in every topic
 (tf x idf over the book's topics), boosted when the author emphasised it (bold/italic) or
-defined it ("X is called ...", "known as X").
+defined it ("X is called ...", "known as X"). A word the book uses mostly as a verb or an adjective
+("I hope", "is necessary") is not a concept: the word before each use is the evidence.
 """
 
 from __future__ import annotations
@@ -37,6 +38,30 @@ WEAK = frozenset(
     illustrations illustration experiment experiments subject subjects towards changes lower
     minds examination produced produce""".split()
 )
+# Function words the stopword list leaves out; never a concept on their own or inside a phrase.
+FUNCTION = frozenset(
+    """till unless whilst within without behind beyond upwards downwards towards toward quite
+    rather almost perhaps indeed instead besides around across along beside onto amongst among
+    present""".split()
+)
+NUMBER = re.compile(
+    r"^(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|twenty|thirty|forty|"
+    r"fifty|sixty|seventy|eighty|ninety|hundred|thousand)(?:-\w+)?$"
+)
+ADJ_SUFFIX = ("less", "ful")
+# Word-class evidence from the word before: a determiner points to a noun, a pronoun, modal or
+# "to" to a verb ("I hope", "to melt"), a copula or degree word to an adjective ("is necessary").
+_DET = frozenset(
+    "the a an this that these those its our their his her my your some any no each every of in on "
+    "with by from into such".split()
+)
+_VERB_PREV = frozenset(
+    "i we you they he she it will shall can may must should would could to not did do does let "
+    "cannot might who which".split()
+)
+_ADJ_PREV = frozenset("is are was were be been being very so too quite rather become becomes seem seems".split())
+_TOK = re.compile(r"[A-Za-z][A-Za-z\-']*|[.,;:!?—]")
+
 GENERIC = frozenset(
     "thing things time times part parts case cases place way ways kind sort number point "
     "lecture chapter section figure example course matter fact fact certain different same "
@@ -94,6 +119,36 @@ def _surface_counts(text: str) -> tuple[Counter, Counter, Counter]:
     return uni, bi, caps
 
 
+def word_class_evidence(texts: list[str]) -> dict[str, tuple[float, int]]:
+    """Per lower-case word: (noun evidence, verb or adjective evidence) over the whole book.
+
+    A determiner before the word counts 1 when the word ends the phrase ("the current.") and 0.5
+    when another content word follows ("the dark part", a modifier). No tagger, no model.
+    """
+    noun: Counter = Counter()
+    other: Counter = Counter()
+    for text in texts:
+        toks = [t.lower() for t in _TOK.findall(text)]
+        for i, t in enumerate(toks):
+            prev = toks[i - 1] if i else "."
+            nxt = toks[i + 1] if i + 1 < len(toks) else "."
+            if prev in _DET:
+                noun[t] += 0.5 if nxt[0].isalpha() and nxt not in STOP else 1.0
+            elif prev in _VERB_PREV or prev in _ADJ_PREV:
+                other[t] += 1
+    return {w: (noun[w], other[w]) for w in set(noun) | set(other)}
+
+
+def _not_a_noun(word: str, ev: dict[str, tuple[float, int]]) -> bool:
+    """True when the book uses the word mostly as a verb or an adjective (hope, melt, necessary)."""
+    if word in FUNCTION or NUMBER.match(word) or word.endswith(ADJ_SUFFIX):
+        return True
+    if word.endswith(("er", "est")) and any(word[:-k] in WEAK for k in (1, 2, 3, 4)):
+        return True  # larger, smallest, bigger: a comparison, not a thing
+    n, o = ev.get(word, (0.0, 0))
+    return o > 0 and o >= n
+
+
 def extract(
     topic_texts: list[str], top_k: int = 8
 ) -> tuple[list[list[Concept]], list[str]]:
@@ -101,6 +156,7 @@ def extract(
     n = len(topic_texts)
     cleaned = [_clean(t) for t in topic_texts]
     counts = [_surface_counts(t) for t in cleaned]
+    ev = word_class_evidence(cleaned)
     df: Counter = Counter()
     for uni, bi, _ in counts:
         df.update(set(uni))
@@ -120,8 +176,12 @@ def extract(
                 continue
             if boost == 1.0 and w.endswith(("ing", "ed")):
                 continue
+            if boost == 1.0 and _not_a_noun(w, ev):
+                continue
             if w.endswith(NOUNISH):
                 boost *= 1.3
+            if sum(ev.get(w, (0.0, 0))) == 0:
+                boost *= 0.7  # never seen after a determiner, pronoun or copula: weak evidence
             proper = 0.6 if caps[w] >= max(1, tf * 0.7) else 1.0
             s = (1 + math.log(tf)) * math.log(1 + n / d) * boost * proper
             cands[w] = (s, tf)
@@ -136,6 +196,8 @@ def extract(
                 or (a.endswith("s") and not a.endswith(("ss", "us", "is", "ics")))
             ):
                 continue  # verb + noun, or a plural + word: rarely a term
+            if key not in emph and (_not_a_noun(a, ev) or _not_a_noun(b, ev)):
+                continue  # "send steam", "water weighs", "quite full", "five cubes"
             d = df[key]
             boost = 2.0 if key in emph else 1.0
             s = 1.6 * (1 + math.log(tf)) * math.log(1 + n / d) * boost
@@ -164,26 +226,37 @@ def extract(
     return out, summaries
 
 
+_NAMING = r"(?:called|termed|known as|named|we call|is said to be|defined as)"
+
+
 def _definition(term: str, sentences: list[str]) -> str | None:
-    pat = re.compile(r"\b" + re.escape(term) + r"\w*\b", re.I)
-    best: tuple[int, str] | None = None
+    """A sentence that defines the term itself: "known as T", "T is a ...", "T means", "T, that is".
+
+    The defining words must sit next to the term. "...clouds of wool, as it was called" or "this is
+    a metal" mention the term in a sentence that defines something else, and give no flashcard.
+    """
+    t = r"\b" + re.escape(term).replace(" ", r"\s+") + r"(?:s|es)?\b"
+    q = "[“”\"']?"
+    patterns = [
+        (3, re.compile(_NAMING + r"\s+(?:the\s+|a\s+|an\s+)?" + q + t, re.I)),
+        (3, re.compile(t + q + r"\s*,?\s+(?:is|are|was|were)\s+" + _NAMING, re.I)),
+        (3, re.compile(t + q + r"\s+(?:means|signifies)\b", re.I)),
+        (2, re.compile(r"^\W*(?:the\s+)?" + t + q + r"\s+(?:is|are|was|were)\s+(?:a|an|the|what|that|made|nothing)\b", re.I)),
+        (2, re.compile(t + q + r"\s*(?:,|—|:|\()\s*(?:that is|i\.e\.|namely)\s", re.I)),
+        # The term as the subject of its sentence: a description, weaker than a definition.
+        (1, re.compile(r"^\W*(?:(?:now|so|then|but|and|here),?\s+)?(?:the\s+|this\s+|our\s+|a\s+|an\s+)?" + t + q
+                       + r"\s+(?:is|are|was|were|has|have|will|can|does|do|gives|give|contains|consists|becomes|"
+                       r"burns|forms|acts|combines|unites|makes|produces)\b", re.I)),
+    ]
+    best: tuple[int, int, str] | None = None
     for s in sentences:
         words = len(s.split())
         if not 6 <= words <= 45:
             continue
-        m = pat.search(s)
-        if not m:
-            continue
-        score = 0
-        if STRONG_DEFINE.search(s):
-            score += 2
-        elif DEFINE.search(s):
-            score += 1
-        if m.start() < 40:
-            score += 1
-        if best is None or score > best[0]:
-            best = (score, s.strip())
-    return best[1] if best and best[0] >= 2 else None
+        score = max((w for w, p in patterns if p.search(s)), default=0)
+        if score and (best is None or (score, -words) > best[:2]):
+            best = (score, -words, s.strip())
+    return best[2] if best else None
 
 
 def _summary(sentences: list[str], concepts: list[Concept]) -> str:

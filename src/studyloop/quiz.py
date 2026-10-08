@@ -88,7 +88,13 @@ def generate_for_topic(con: sqlite3.Connection, topic_id: int) -> int:
     rng = random.Random(qid("seed", topic_id))
     used: set[int] = set()
     made = 0
-    for term in concepts:
+    # Each topic concept first; then a second sentence per concept and the book's other concepts that
+    # occur here, until the topic has enough distinct sentences for a full round (a round never asks
+    # two questions on one sentence, see pick).
+    extra = concepts + [c for c in book_concepts if c not in concepts]
+    for i, term in enumerate(concepts + extra):
+        if i >= len(concepts) and len(used) >= 8:
+            break
         best = None
         for a, b in sents:
             if a in used:
@@ -202,13 +208,31 @@ def pick(con: sqlite3.Connection, topic_id: int, n: int = 6) -> list[dict]:
     by_kind: dict[str, list] = {}
     for r in sorted(rows, key=key):
         by_kind.setdefault(r["kind"], []).append(r)
+    # One question per source sentence per round: the cloze, choice and true/false built on a
+    # sentence share its blank, so asking two of them gives the second answer away. A blanked word
+    # already asked about on another sentence is used only when nothing else is left.
     out, kinds = [], ["mcq", "cloze", "tf"]
-    i = 0
-    while len(out) < n and any(by_kind.get(k) for k in kinds):
-        k = kinds[i % len(kinds)]
-        i += 1
-        if by_kind.get(k):
-            out.append(by_kind[k].pop(0))
+    used_spans: set[int] = set()
+    used_answers: set[str] = set()
+
+    def fresh(r, strict: bool) -> bool:
+        if r["q_start"] in used_spans:
+            return False
+        return not (strict and r["kind"] != "tf" and r["answer"].lower() in used_answers)
+
+    for strict in (True, False):
+        i = 0
+        while len(out) < n and i < 3 * max(1, len(rows)):
+            k = kinds[i % len(kinds)]
+            i += 1
+            cand = next((r for r in by_kind.get(k, []) if fresh(r, strict)), None)
+            if cand is None:
+                continue
+            by_kind[k].remove(cand)
+            out.append(cand)
+            used_spans.add(cand["q_start"])
+            if cand["kind"] != "tf":
+                used_answers.add(cand["answer"].lower())
     return [public(r) for r in out]
 
 

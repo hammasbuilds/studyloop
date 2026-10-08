@@ -3,10 +3,10 @@ Output: 6 chapters, 26 topics, 364 retrieval passages
 
 Course outline (first chapter)
   Lecture I: The Flame > The Flame  [1547 words]  concepts: coal mines, moulds, manufacture, dips
-  Lecture I: The Flame > Its Sources  [633 words]  concepts: specimens, lamp-glass, fine, solid substance
-  Lecture I: The Flame > Structure  [690 words]  concepts: current, melt, horizontal, edge
+  Lecture I: The Flame > Its Sources  [633 words]  concepts: specimens, lamp-glass, solid substance, candles
+  Lecture I: The Flame > Structure  [690 words]  concepts: current, edge, fluid, sides
   Lecture I: The Flame > Mobility  [918 words]  concepts: capillary attraction, cane, towel, finger
-  Lecture I: The Flame > Brightness  [1907 words]  concepts: tongues, flame upwards, shadow, snapdragon
+  Lecture I: The Flame > Brightness  [1907 words]  concepts: tongues, shadow, snapdragon, current
 
 Ask the book
   en       What is capillary attraction?
@@ -30,7 +30,7 @@ Ask the book
   6 of 9 answered, every quote verified against the markdown
 
 Quiz and mastery (topic: Hydrogen, answering 8 of 12 correctly on purpose)
-  question pool: cloze 7, mcq 7, tf 7
+  question pool: cloze 8, mcq 8, tf 8
   answer  1 mcq   right  P(known) 0.580  learning
   answer  2 cloze right  P(known) 0.892  getting there
   answer  3 tf    wrong  P(known) 0.808  getting there

@@ -156,11 +156,19 @@ def recall(con: sqlite3.Connection, query: str, book_id: int | None = None, k: i
         items.append({"type": "note", "id": n["id"], "text": n["text"], "book_id": n["book_id"],
                       "topic_id": n["topic_id"], "ts": n["updated"], "book": n.get("book"),
                       "topic": n.get("topic")})
+    # The same question asked again is one hit with a count, not a list of identical rows; the
+    # newest asking (history is newest first) supplies the answer and time.
+    asked: dict[tuple, dict] = {}
     for h in question_history(con, book_id, limit=500):
-        items.append({"type": "question", "id": h["id"],
+        key = (h["book_id"], " ".join((h["question"] or "").lower().split()).rstrip("?.! "))
+        if key in asked:
+            asked[key]["count"] += 1
+            continue
+        asked[key] = {"type": "question", "id": h["id"],
                       "text": (h["question"] or "") + " " + (h["answer"] or ""),
                       "question": h["question"], "book_id": h["book_id"], "ts": h["ts"],
-                      "book": h["book"], "answered": h["answered"]})
+                      "book": h["book"], "answered": h["answered"], "count": 1}
+    items.extend(asked.values())
     q = tokens(query)
     if not items or not q:
         return []

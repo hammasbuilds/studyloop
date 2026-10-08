@@ -26,19 +26,19 @@ Input: the file a-small-book-of-rivers.md chosen with the file picker. Output: t
 
 ![04-library-upload-done.png](04-library-upload-done.png)
 
-Output of the upload: the markdown file is now a book in the list with its chapters and word count.
+Output of the upload: the markdown file is now a book in the list with its chapters and word count, and the form confirms what was added.
 
 ### 05-library-paste-text.png
 
 ![05-library-paste-text.png](05-library-paste-text.png)
 
-Input: lecture notes pasted into the text box with the title "Volcanoes in brief". Output: the form reports that the text is being sent and converted.
+Input: lecture notes with two ## headings pasted into the text box with the title "Volcanoes in brief". Output: "Volcanoes in brief" in the book list with its chapters and words; the form confirms it was added.
 
 ### 06-library-import-url.png
 
 ![06-library-import-url.png](06-library-import-url.png)
 
-Input: a web address, here a page served from this machine (the operator switch STUDYLOOP_ALLOW_PRIVATE_URLS=1 is set only for this script; normally private addresses are refused). Output: the import is accepted and converted.
+Input: a web address, here a page served from this machine (the operator switch STUDYLOOP_ALLOW_PRIVATE_URLS=1 is set only for this script; normally private addresses are refused). Output: the article "How deltas form" in the book list, its navigation and footer dropped, with the form confirming it was added.
 
 ### 07-library-all-books.png
 
@@ -188,7 +188,7 @@ Output: the home page progress overview after studying: topics mastered ring, re
 
 ![29-memory-search.png](29-memory-search.png)
 
-Input: "capillary" typed in the memory search. Output: the past questions that matched, with their score, plus the notes and question history below.
+Input: "capillary" typed in the memory search. Output: the past questions that matched with their score; the same question asked on the home page and on the Ask page is one hit marked with how many times it was asked. The notes and question history are below.
 
 ### 30-memory-search-notes.png
 
@@ -214,7 +214,7 @@ Input: the Export my notes button on the book page. Output: the downloaded notes
 
 ![33-export-anki-csv.png](33-export-anki-csv.png)
 
-Input: the Flashcards (CSV) button. Output: the downloaded flashcards.csv, one card per concept the book defines (front, back, source), ready to import into Anki.
+Input: the Flashcards (CSV) button. Output: the downloaded flashcards.csv (front, back, source), ready to import into Anki: a card only for a key concept the book defines or makes the subject of a sentence, so the sample's 33,688 words give 10 cards.
 
 ## About
 
@@ -236,4 +236,10 @@ The same home page in light mode (the theme follows the system and has a toggle 
 
 ![36-home-phone.png](36-home-phone.png)
 
-The home page at phone width (390 px): the navigation and the try-it panel reflow to one column.
+The home page at phone width (390 px): the six navigation links wrap onto their own row under the logo so every page is one tap away, and the try-it panel reflows to one column.
+
+### 37-library-phone.png
+
+![37-library-phone.png](37-library-phone.png)
+
+The Library at phone width: the nav row, the add-a-book form in one column, and the book list below it.

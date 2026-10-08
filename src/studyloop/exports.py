@@ -1,7 +1,7 @@
 """Take your study material out: notes as markdown, definitions as an Anki-ready CSV.
 
 Both are built only from the book's own text and the user's own notes: flashcard answers are the
-sentences the book uses to define each concept, never generated text.
+sentences the book uses to define or describe each concept, never generated text.
 """
 
 from __future__ import annotations
@@ -52,7 +52,7 @@ def notes_markdown(con: sqlite3.Connection, book_id: int) -> str:
 
 
 def flashcards_csv(con: sqlite3.Connection, book_id: int) -> tuple[str, int]:
-    """Front, Back, Source: one card per concept the book defines. Returns (csv text, cards)."""
+    """Front, Back, Source: one card per concept the book defines or describes. Returns (csv text, cards)."""
     buf = io.StringIO()
     w = csv.writer(buf, lineterminator="\n")
     w.writerow(["Front", "Back", "Source"])
@@ -67,7 +67,7 @@ def flashcards_csv(con: sqlite3.Connection, book_id: int) -> tuple[str, int]:
             if not term or not definition or term.lower() in seen:
                 continue
             seen.add(term.lower())
-            w.writerow([_cell(f"What does the book say {term} is?"), _cell(definition),
+            w.writerow([_cell(f"What does the book say about {term}?"), _cell(definition),
                         _cell(f"{t['chapter']} / {t['title']}")])
             n += 1
     return buf.getvalue(), n

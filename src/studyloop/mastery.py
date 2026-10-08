@@ -202,9 +202,12 @@ def review_next(con: sqlite3.Connection, book_id: int | None = None, limit: int 
         why = "weak, review now" if r["p_known"] < 0.6 else (
             f"due, {late:.1f} days late" if late >= 0.5 else "due for review")
         out.append(r | {"reason": why})
+    from .quiz import ensure_pool  # quiz imports this module
+
     seen_books: set[int] = set()
     for r in rows:
-        if r["attempts"] == 0 and r["book_id"] not in seen_books:
+        # a topic too short to make a question from cannot be studied by quiz: offer the next one
+        if r["attempts"] == 0 and r["book_id"] not in seen_books and ensure_pool(con, r["topic_id"]):
             seen_books.add(r["book_id"])
             out.append(r | {"reason": "next new topic"})
     rest = [r for r in rows if r["attempts"] and not (r["due"] or r["p_known"] < 0.6)]
