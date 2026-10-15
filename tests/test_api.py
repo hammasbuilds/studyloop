@@ -104,10 +104,10 @@ def test_background_import_completes(db_path):
 def test_topic_quiz_answer_flow_updates_mastery(client):
     bid = client.post("/api/books/sample").json()["id"]
     course = client.get(f"/api/books/{bid}").json()["course"]
-    tid = course[2]["topics"][3]["id"]
+    tid = course[3]["topics"][3]["id"]
     t = client.get(f"/api/topics/{tid}").json()
     assert t["text"] and t["n_questions"] >= 6 and t["mastery"]["attempts"] == 0
-    assert t["prev"] and t["next"] and t["chapter"] == course[2]["title"]
+    assert t["prev"] and t["next"] and t["chapter"] == course[3]["title"]
     qs = client.get(f"/api/topics/{tid}/quiz?n=4").json()["questions"]
     assert len(qs) == 4 and all("answer" not in q for q in qs)
     q = next(x for x in qs if x["kind"] == "mcq")
@@ -120,7 +120,7 @@ def test_topic_quiz_answer_flow_updates_mastery(client):
     assert client.get("/api/topics/99999/quiz").status_code == 404
     assert client.get(f"/api/topics/{tid}/quiz?n=0").status_code == 422
     book = client.get(f"/api/books/{bid}").json()
-    m = book["course"][2]["topics"][3]["mastery"]
+    m = book["course"][3]["topics"][3]["mastery"]
     assert m["attempts"] == 2 and book["progress"]["practised"] == 1
 
 
@@ -216,7 +216,7 @@ def test_delete_book_removes_everything(client, db_path):
     import sqlite3
 
     bid = client.post("/api/books/sample").json()["id"]
-    tid = client.get(f"/api/books/{bid}").json()["course"][0]["topics"][0]["id"]
+    tid = client.get(f"/api/books/{bid}").json()["course"][1]["topics"][0]["id"]
     q = client.get(f"/api/topics/{tid}/quiz?n=1").json()["questions"][0]
     client.post("/api/quiz/answer", json={"question_id": q["id"], "response": "x"})
     client.post("/api/notes", json={"topic_id": tid, "text": "n"})
@@ -231,7 +231,7 @@ def test_delete_book_removes_everything(client, db_path):
 
 def test_dashboard_with_progress(client):
     bid = client.post("/api/books/sample").json()["id"]
-    tid = client.get(f"/api/books/{bid}").json()["course"][0]["topics"][0]["id"]
+    tid = client.get(f"/api/books/{bid}").json()["course"][1]["topics"][0]["id"]
     for q in client.get(f"/api/topics/{tid}/quiz?n=5").json()["questions"]:
         client.post("/api/quiz/answer", json={"question_id": q["id"], "response": "x"})
     d = client.get("/api/dashboard").json()

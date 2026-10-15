@@ -36,14 +36,24 @@ WEAK = frozenset(
     short high low good better best whole several certain various other another same first
     second third last next particular perfectly perfect proper properly regular regularly
     illustrations illustration experiment experiments subject subjects towards changes lower
-    minds examination produced produce""".split()
+    minds examination produced produce fresh burst measure measures fluted shaped indifferent""".split()
 )
 # Function words the stopword list leaves out; never a concept on their own or inside a phrase.
 FUNCTION = frozenset(
     """till unless whilst within without behind beyond upwards downwards towards toward quite
     rather almost perhaps indeed instead besides around across along beside onto amongst among
-    present""".split()
+    present inside outside beneath underneath nearly however none nevertheless moreover otherwise
+    whatever whenever wherever somewhat already always often sometimes together enough""".split()
 )
+# Irregular past participles: they follow "is/are" like adjectives and never name a thing.
+PARTICIPLES = frozenset(
+    """built known shown seen given taken made done gone grown thrown drawn blown worn torn born
+    kept left sent spent lost held told sold brought bought caught taught thought found bound
+    ground wound split spread shut struck stuck hung led fed bred laid paid said heard meant
+    understood written driven risen frozen chosen broken spoken stolen fallen""".split()
+)
+# Words ending in -ic that are things, not qualities.
+IC_NOUNS = frozenset("arsenic logic music topic fabric clinic panic mechanic critic tunic".split())
 NUMBER = re.compile(
     r"^(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|twenty|thirty|forty|"
     r"fifty|sixty|seventy|eighty|ninety|hundred|thousand)(?:-\w+)?$"
@@ -65,7 +75,10 @@ _TOK = re.compile(r"[A-Za-z][A-Za-z\-']*|[.,;:!?—]")
 GENERIC = frozenset(
     "thing things time times part parts case cases place way ways kind sort number point "
     "lecture chapter section figure example course matter fact fact certain different same "
-    "great small large little first second third next last good form body".split()
+    "great small large little first second third next last good form body occasion success "
+    "search experience presence relation hours hour portion operations operation processes "
+    "preparation heap sides side hands hand finger fingers edge game power powers intensity "
+    "instance instances direction directions extent abundance union phenomena years year".split()
 )
 
 
@@ -92,11 +105,17 @@ def _clean(md: str) -> str:
     return md
 
 
-def _surface_counts(text: str) -> tuple[Counter, Counter, Counter]:
-    """(unigram stem counts, bigram stem-pair counts, capitalised-mid-sentence counts)."""
+def _surface_counts(text: str) -> tuple[Counter, Counter, Counter, dict[str, Counter]]:
+    """(unigram counts, bigram counts, capitalised-mid-sentence counts, surface forms).
+
+    Unigrams are counted per stem, so "spring" and "springs" are one concept with one count; the
+    surface forms seen for each stem are returned so the commonest one can be shown. A bigram is
+    keyed on its first word and the stem of its last ("oxbow lake", "oxbow lakes").
+    """
     uni: Counter = Counter()
     bi: Counter = Counter()
     caps: Counter = Counter()
+    surface: dict[str, Counter] = {}
     for a, b in split_sentences(text):
         sent = text[a:b]
         ws = [(m.group(0), m.start()) for m in WORD.finditer(sent)]
@@ -108,15 +127,18 @@ def _surface_counts(text: str) -> tuple[Counter, Counter, Counter]:
                 and not lw.endswith("ly")
             )
             if keep:
-                uni[lw] += 1
+                k = stem(lw)
+                uni[k] += 1
+                surface.setdefault(k, Counter())[lw] += 1
                 if w[0].isupper() and i > 0:
-                    caps[lw] += 1
+                    caps[k] += 1
                 if prev is not None and prev[1] == i - 1 and sent[prev[2] : pos].strip() == "":
-                    bi[(prev[0], lw)] += 1
+                    bi[(prev[0], k)] += 1
+                    surface.setdefault(f"{prev[0]} {k}", Counter())[f"{prev[0]} {lw}"] += 1
                 prev = (lw, i, pos + len(w))
             else:
                 prev = None
-    return uni, bi, caps
+    return uni, bi, caps, surface
 
 
 def word_class_evidence(texts: list[str]) -> dict[str, tuple[float, int]]:
@@ -139,67 +161,106 @@ def word_class_evidence(texts: list[str]) -> dict[str, tuple[float, int]]:
     return {w: (noun[w], other[w]) for w in set(noun) | set(other)}
 
 
-def _not_a_noun(word: str, ev: dict[str, tuple[float, int]]) -> bool:
-    """True when the book uses the word mostly as a verb or an adjective (hope, melt, necessary)."""
+def _not_a_noun(
+    word: str, ev: dict[str, tuple[float, int]], forms: Counter | None = None, modifier: bool = False
+) -> bool:
+    """True when the book uses the word mostly as a verb or an adjective (hope, melt, necessary).
+
+    ``forms`` (every surface of the word's stem) pools the evidence: "the springs" counts for
+    "spring". ``modifier`` is the first word of a phrase, which may be an adjective or a participle
+    ("carbonic acid", "chemical action", "known quantity")."""
     if word in FUNCTION or NUMBER.match(word) or word.endswith(ADJ_SUFFIX):
         return True
+    if not modifier and (word in PARTICIPLES or ("-" in word and word.split("-")[-1] in PARTICIPLES)):
+        return True  # "built", "well-known": a verb form, not a thing
+    if not modifier and word.endswith(("ic", "ical")) and word not in IC_NOUNS:
+        return True  # "metallic", "chemical": adjectives
     if word.endswith(("er", "est")) and any(word[:-k] in WEAK for k in (1, 2, 3, 4)):
         return True  # larger, smallest, bigger: a comparison, not a thing
-    n, o = ev.get(word, (0.0, 0))
+    n, o = _evidence(forms, ev) if forms else ev.get(word, (0.0, 0))
     return o > 0 and o >= n
 
 
+def _evidence(forms: Counter, ev: dict[str, tuple[float, int]]) -> tuple[float, int]:
+    n = sum(ev.get(f, (0.0, 0))[0] for f in forms)
+    o = sum(ev.get(f, (0.0, 0))[1] for f in forms)
+    return n, o
+
+
+def _shown(forms: Counter) -> str:
+    """The surface to show: the commonest, and the shorter (singular) one on a tie."""
+    return sorted(forms.items(), key=lambda kv: (-kv[1], len(kv[0])))[0][0]
+
+
 def extract(
-    topic_texts: list[str], top_k: int = 8
+    topic_texts: list[str], top_k: int = 8, titles: list[str] | None = None
 ) -> tuple[list[list[Concept]], list[str]]:
-    """Concepts for every topic text, plus a one-sentence summary per topic."""
+    """Concepts for every topic text, plus a one-sentence summary per topic.
+
+    ``titles`` (the topics' headings) is evidence too: a word the heading names is a concept of
+    its topic even when the text uses it once ("### Meanders" over "A meander is a bend").
+    """
     n = len(topic_texts)
+    titles = titles or [""] * n
     cleaned = [_clean(t) for t in topic_texts]
     counts = [_surface_counts(t) for t in cleaned]
     ev = word_class_evidence(cleaned)
     df: Counter = Counter()
-    for uni, bi, _ in counts:
+    for uni, bi, _, _ in counts:
         df.update(set(uni))
         df.update({f"{a} {b}" for (a, b) in bi})
     out: list[list[Concept]] = []
     summaries: list[str] = []
-    for text, (uni, bi, caps) in zip(cleaned, counts, strict=True):
+    for text, title, (uni, bi, caps, surface) in zip(cleaned, titles, counts, strict=True):
         emph = {m.group(2).strip().lower() for m in EMPH.finditer(text)}
+        emph_stems = {" ".join(stem(x) for x in e.split()) for e in emph}
+        named = {stem(w.lower()) for w in WORD.findall(title)}
         sentences = [text[a:b] for a, b in split_sentences(text)]
         cands: dict[str, tuple[float, int]] = {}
-        for w, tf in uni.items():
-            d = df[w]
+        for k, tf in uni.items():
+            forms = surface[k]
+            w = _shown(forms)
+            d = df[k]
             if n >= 4 and d / n > 0.7:
                 continue
-            boost = 2.0 if w in emph else 1.0
-            if tf < 2 and boost == 1.0:
+            boost = 2.0 if k in emph_stems else 1.0
+            if boost == 1.0 and _not_a_noun(w, ev, forms):
                 continue
-            if boost == 1.0 and w.endswith(("ing", "ed")):
-                continue
-            if boost == 1.0 and _not_a_noun(w, ev):
-                continue
+            in_title = k in named
+            if boost == 1.0 and not in_title and w.endswith(("ing", "ed")):
+                continue  # "burning", "heated": a verb form, unless the heading names it ("Springs")
+            if tf < 2 and boost == 1.0 and not (
+                (in_title and _evidence(forms, ev)[0] > 0) or _defines(w, sentences)
+            ):
+                continue  # once is enough when the heading names it or a sentence defines it
+            if in_title:
+                boost *= 1.5
             if w.endswith(NOUNISH):
                 boost *= 1.3
-            if sum(ev.get(w, (0.0, 0))) == 0:
+            if sum(_evidence(forms, ev)) == 0:
                 boost *= 0.7  # never seen after a determiner, pronoun or copula: weak evidence
-            proper = 0.6 if caps[w] >= max(1, tf * 0.7) else 1.0
+            proper = 0.6 if caps[k] >= max(1, tf * 0.7) else 1.0
             s = (1 + math.log(tf)) * math.log(1 + n / d) * boost * proper
             cands[w] = (s, tf)
         for (a, b), tf in bi.items():
-            key = f"{a} {b}"
+            forms = surface[f"{a} {b}"]
+            key = _shown(forms)
+            last = key.split()[1]
             if tf < 2 and key not in emph:
                 continue
-            if key not in emph and tf / min(uni[a], uni[b]) < 0.4:
+            if key not in emph and tf / min(uni[stem(a)], uni[b]) < 0.4:
                 continue  # the two words mostly occur apart: not a collocation
             if key not in emph and (
-                a.endswith(("ed", "ing")) or b.endswith(("ed", "ing"))
+                a.endswith(("ed", "ing")) or last.endswith(("ed", "ing"))
                 or (a.endswith("s") and not a.endswith(("ss", "us", "is", "ics")))
             ):
                 continue  # verb + noun, or a plural + word: rarely a term
-            if key not in emph and (_not_a_noun(a, ev) or _not_a_noun(b, ev)):
+            if key not in emph and (_not_a_noun(a, ev, modifier=True) or _not_a_noun(last, ev, surface[b])):
                 continue  # "send steam", "water weighs", "quite full", "five cubes"
-            d = df[key]
+            d = df[f"{a} {b}"]
             boost = 2.0 if key in emph else 1.0
+            if stem(a) in named and b in named:
+                boost *= 1.5
             s = 1.6 * (1 + math.log(tf)) * math.log(1 + n / d) * boost
             cands[key] = (s, tf)
         for e in emph:
@@ -208,13 +269,13 @@ def extract(
         ranked = sorted(cands.items(), key=lambda kv: -kv[1][0])
         chosen: list[Concept] = []
         for term, (s, tf) in ranked:
-            parts = term.split()
+            parts = {stem(x) for x in term.split()}
             if any(stem(term) == stem(c.term) for c in chosen):
                 continue
             # A unigram already inside a chosen phrase, or a phrase built on a chosen word, adds nothing.
             if any(
-                (len(parts) == 1 and term in c.term.split())
-                or (len(c.term.split()) == 1 and c.term in parts and tf <= 3)
+                (len(parts) == 1 and stem(term) in {stem(x) for x in c.term.split()})
+                or (len(c.term.split()) == 1 and stem(c.term) in parts and tf <= 3)
                 for c in chosen
             ):
                 continue
@@ -229,7 +290,7 @@ def extract(
 _NAMING = r"(?:called|termed|known as|named|we call|is said to be|defined as)"
 
 
-def _definition(term: str, sentences: list[str]) -> str | None:
+def _best_definition(term: str, sentences: list[str]) -> tuple[int, int, str] | None:
     """A sentence that defines the term itself: "known as T", "T is a ...", "T means", "T, that is".
 
     The defining words must sit next to the term. "...clouds of wool, as it was called" or "this is
@@ -256,7 +317,26 @@ def _definition(term: str, sentences: list[str]) -> str | None:
         score = max((w for w, p in patterns if p.search(s)), default=0)
         if score and (best is None or (score, -words) > best[:2]):
             best = (score, -words, s.strip())
+    return best
+
+
+def _defines(term: str, sentences: list[str]) -> bool:
+    """A sentence whose subject is the term ("A delta is a landform ...") or that names it at the
+    end of a clause ("... is called lava."). Stricter than ``_definition``: "is called an infinite
+    loop" defines the phrase, not "infinite", and "a loop that never ends is called" defines nothing
+    called "ends"."""
+    t = re.escape(term).replace(r"\ ", r"\s+") + r"(?:s|es)?"
+    subject = re.compile(r"^\W*(?:an?\s+|the\s+)?" + t + r"\s+(?:is|are)\s+(?:an?|the)\s", re.I)
+    named = re.compile(_NAMING + r"\s+(?:an?\s+|the\s+)?" + t + r"\s*(?:[.,;:)]|$)", re.I)
+    return any(subject.search(s) or named.search(s) for s in sentences)
+
+
+def _definition(term: str, sentences: list[str]) -> str | None:
+    best = _best_definition(term, sentences)
     return best[2] if best else None
+
+
+
 
 
 def _summary(sentences: list[str], concepts: list[Concept]) -> str:
@@ -273,4 +353,13 @@ def _summary(sentences: list[str], concepts: list[Concept]) -> str:
         score *= 1.15 if i < 3 else 1.0
         if score > best_s:
             best, best_s = s.strip(), score
-    return best or sentences[0].strip()
+    return _plain(best or sentences[0].strip())
+
+
+_MARK = re.compile(r"\*+|(?<!\w)_+|_+(?!\w)")  # an underscore inside a word (snake_case) stays
+
+
+def _plain(sentence: str) -> str:
+    """The summary is shown as plain text: emphasis markers go, including one left open where
+    a sentence split an italic paragraph ("*Michael Faraday, a course of six lectures ...")."""
+    return re.sub(r"\s+", " ", _MARK.sub("", sentence)).strip()

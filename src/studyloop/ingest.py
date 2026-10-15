@@ -15,6 +15,7 @@ from pathlib import Path
 
 from . import concepts, db, net
 from .structure import Para, ParsedBook, parse_course, split_long
+from .textutil import count_words
 
 SAMPLE = Path(__file__).parent / "sample" / "candle.md"
 MAX_UPLOAD = 60 * 1024 * 1024
@@ -207,7 +208,8 @@ def passage_spans(paras: list[Para]) -> list[tuple[int, int]]:
 
 def save_course(con: sqlite3.Connection, book_id: int, parsed: ParsedBook, md: str) -> None:
     topics = [t for c in parsed.chapters for t in c.topics]
-    cons, summaries = concepts.extract([md[t.start : t.end] for t in topics])
+    cons, summaries = concepts.extract(
+        [md[t.start : t.end] for t in topics], titles=[t.title for t in topics])
     i = 0
     for c_ord, ch in enumerate(parsed.chapters):
         cur = con.execute(
@@ -245,7 +247,7 @@ def add_book(
     if not parsed.chapters or not any(t.paras for c in parsed.chapters for t in c.topics):
         raise IngestError("could not find any study text in that source")
     title = conv.title or parsed.title
-    n_words = len(md.split())
+    n_words = count_words(md)
     if book_id is None:
         cur = con.execute(
             "INSERT INTO books(title, source_type, source_ref, status, markdown, n_words, added_at,"

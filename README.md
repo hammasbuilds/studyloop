@@ -167,7 +167,7 @@ Input: the Export my notes button on the book page. Output: the downloaded notes
 
 ![export anki csv](docs/gallery/33-export-anki-csv.png)
 
-Input: the Flashcards (CSV) button. Output: the downloaded flashcards.csv (front, back, source), ready to import into Anki: a card only for a key concept the book defines or makes the subject of a sentence, so the sample's 33,688 words give 10 cards.
+Input: the Flashcards (CSV) button. Output: the downloaded flashcards.csv (front, back, source), ready to import into Anki: a card only for a key concept the book defines or makes the subject of a sentence, so the sample's 33,570 words give 9 cards.
 
 ### About
 

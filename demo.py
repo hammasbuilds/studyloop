@@ -39,8 +39,10 @@ def main() -> None:
     print(f"Input : {book['title']} ({book['n_words']:,} words, markdown)")
     print(f"Output: {chapters} chapters, {topics} topics, {passages} retrieval passages\n")
 
-    print("Course outline (first chapter)")
-    first = con.execute("SELECT id, title FROM chapters ORDER BY ord LIMIT 1").fetchone()
+    print("Course outline (first lecture)")
+    first = con.execute(
+        "SELECT c.id, c.title FROM chapters c WHERE EXISTS (SELECT 1 FROM topics t WHERE "
+        "t.chapter_id=c.id AND t.concepts != '[]') ORDER BY c.ord LIMIT 1").fetchone()
     for t in con.execute("SELECT * FROM topics WHERE chapter_id=? ORDER BY ord", (first["id"],)):
         terms = ", ".join(c["term"] for c in json.loads(t["concepts"])[:4])
         print(f"  {first['title']} > {t['title']}  [{t['n_words']} words]  concepts: {terms}")

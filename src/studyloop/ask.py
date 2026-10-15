@@ -18,7 +18,7 @@ from . import llm as llm_mod
 from . import memory, urdu
 from ._vendor.bm25 import BM25
 from .concepts import DEFINE
-from .textutil import locate, split_sentences, tokens
+from .textutil import locate, split_sentences, stem, token_positions, tokens
 
 ABSTAIN_BELOW = 0.55  # idf-weighted share of the question's terms one passage must contain
 MAX_SENTENCES = 3
@@ -92,7 +92,7 @@ def _phrase_supported(terms: list[str], passages: list[PassageRec]) -> bool:
     pairs = list(zip(terms, terms[1:], strict=False))
     for p in passages:
         pos: dict[str, list[int]] = {}
-        for i, t in enumerate(p.toks):
+        for i, t in token_positions(p.text):
             pos.setdefault(t, []).append(i)
         for a, b in pairs:
             if any(abs(i - j) <= PHRASE_GAP for i in pos.get(a, ()) for j in pos.get(b, ())):
@@ -106,12 +106,51 @@ def _idf(idx: Index, term: str) -> float:
     return idx.bm25.idf.get(term) or math.log(1 + (idx.bm25.n + 0.5) / 0.5)
 
 
-def retrieve(idx: Index, terms: list[str], k: int = TOP_PASSAGES) -> list[tuple[PassageRec, float]]:
+CUE_WINDOW = 8  # a cue counts when it sits this close (in words) to one of the question's terms
+CUE_FLOOR = 0.3  # ...in a passage scoring at least this share of the best BM25 score
+
+
+def _cue_res(cues: list[str]) -> list[re.Pattern]:
+    return [re.compile(r"(?<![A-Za-z])" + r"\s+".join(map(re.escape, c.split())) + r"(?![A-Za-z])", re.I)
+            for c in cues]
+
+
+def _cue_near(text: str, terms: set[str], cues: list[list[str]], window: int = CUE_WINDOW) -> bool:
+    """True when a cue phrase sits within ``window`` words of a question term: "make hydrogen"
+    (window 1), "gunpowder is composed of", "air into the two things of which it is composed"."""
+    words = re.findall(r"[A-Za-z]+", text.lower())
+    at_term = [i for i, w in enumerate(words) if stem(w) in terms]
+    if not at_term:
+        return False
+    for cue in cues:
+        n = len(cue)
+        for j in range(len(words) - n + 1):
+            if words[j : j + n] == cue and any(-window <= j - i <= window + n - 1 for i in at_term):
+                return True
+    return False
+
+
+def retrieve(
+    idx: Index, terms: list[str], k: int = TOP_PASSAGES, cues: list[str] | None = None,
+    window: int = CUE_WINDOW,
+) -> list[tuple[PassageRec, float]]:
+    """Top ``k`` passages by BM25 over the question's terms.
+
+    With ``cues`` (the question asks what something is made of, or how it is made), a passage
+    where a cue phrase sits next to a term comes first, provided it scores at least ``CUE_FLOOR``
+    of the best passage; the rest keep their BM25 order. A passage with none of the terms is never
+    added."""
     if not terms or not idx.passages:
         return []
     scores = idx.bm25.scores(terms)
-    order = sorted(range(len(scores)), key=lambda i: -scores[i])[:k]
-    return [(idx.passages[i], scores[i]) for i in order if scores[i] > 0]
+    order = [i for i in sorted(range(len(scores)), key=lambda i: -scores[i]) if scores[i] > 0]
+    if cues and order:
+        floor = CUE_FLOOR * scores[order[0]]
+        tset = set(terms)
+        split = [c.lower().split() for c in cues]
+        near = {i for i in order if scores[i] >= floor and _cue_near(idx.passages[i].text, tset, split, window)}
+        order = [i for i in order if i in near] + [i for i in order if i not in near]
+    return [(idx.passages[i], scores[i]) for i in order[:k]]
 
 
 def _citation(idx: Index, n: int, start: int, end: int) -> dict:
@@ -136,13 +175,19 @@ def _clean_quote_span(md: str, a: int, b: int) -> tuple[int, int]:
 
 
 def extractive(
-    idx: Index, terms: list[str], intent: str | None
+    idx: Index, terms: list[str], intent: str | None, cues: list[str] | None = None,
+    window: int = CUE_WINDOW,
 ) -> tuple[list[tuple[int, int]], float]:
-    """Best sentences as absolute (start, end) spans, plus the share of question terms covered."""
-    hits = retrieve(idx, terms)
-    if not hits:
+    """Best sentences as absolute (start, end) spans, plus the share of question terms covered.
+
+    Support is judged on the plain BM25 hits, so cues can change which sentences are quoted but
+    never whether the question is answered."""
+    plain = retrieve(idx, terms)
+    if not plain:
         return [], 0.0
-    top = hits[0][1]
+    hits = retrieve(idx, terms, cues=cues, window=window) if cues else plain
+    cue_res = _cue_res(cues or [])
+    top = max(sc for _, sc in hits)
     weights = {t: _idf(idx, t) for t in set(terms)}
     total_w = sum(weights.values()) or 1.0
     cands: list[tuple[float, int, int, set[str]]] = []
@@ -162,6 +207,9 @@ def extractive(
                 s += 0.08
             if 8 <= words <= 40:
                 s += 0.04
+            if cue_res and any(r.search(sent) for r in cue_res):
+                near = _cue_near(sent, set(terms), [c.lower().split() for c in cues or []], window)
+                s += 0.25 if near else 0.04
             ca, cb = _clean_quote_span(idx.markdown, p.start + a, p.start + b)
             cands.append((s, ca, cb, matched))
     cands.sort(key=lambda c: -c[0])
@@ -180,9 +228,9 @@ def extractive(
     # Support is judged on one passage, not on the union of sentences: a question whose words are
     # only ever found in different places ("boiling point" here, "mercury" there) is not answered.
     support = max(
-        sum(weights[t] for t in weights if t in p.toks) / total_w for p, _ in hits
+        sum(weights[t] for t in weights if t in p.toks) / total_w for p, _ in plain
     )
-    if not _phrase_supported(terms, [p for p, _ in hits]):
+    if not _phrase_supported(terms, [p for p, _ in plain]):
         support = min(support, PHRASE_PENALTY)
     chosen.sort(key=lambda c: c[1])
     return [(c[1], c[2]) for c in chosen], support
@@ -249,11 +297,16 @@ def ask(
         "answer": "", "citations": [], "dropped_quotes": 0, "message": "", "support": 0.0,
         "related": [],
     }
-    if not a.terms:
+    if not a.terms and a.ignored:
+        # Words were there, but neither the book nor the Urdu glossary knows any of them: that is
+        # an answer about the book, not a malformed question.
+        result["message"] = ("The book does not say. None of the question's words occur in it: "
+                             + ", ".join(a.ignored[:8]) + ".")
+    elif not a.terms:
         result["message"] = "I could not find any searchable words in that question."
     else:
         client = client if client is not None else (llm_mod.get_client() if use_llm else None)
-        spans, support = extractive(idx, a.terms, a.intent)
+        spans, support = extractive(idx, a.terms, a.intent, a.cues, a.cue_window)
         result["support"] = round(support, 3)
         hits = retrieve(idx, a.terms, k=8)
         seen: list[int] = []

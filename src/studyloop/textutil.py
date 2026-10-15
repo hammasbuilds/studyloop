@@ -34,7 +34,8 @@ def stem(word: str) -> str:
     if len(w) <= 3:
         return w
     for suf, rep in (
-        ("ational", "ate"), ("ization", "ize"), ("ically", "ic"), ("ies", "y"), ("sses", "ss"),
+        ("ational", "ate"), ("ization", "ize"), ("ically", "ic"), ("ness", ""), ("ies", "y"),
+        ("sses", "ss"),
         ("ings", ""), ("ing", ""), ("edly", ""), ("ed", ""), ("ly", ""), ("es", ""), ("s", ""),
     ):
         if w.endswith(suf) and len(w) - len(suf) >= 3:
@@ -48,12 +49,40 @@ def stem(word: str) -> str:
 
 
 def tokens(text: str, *, keep_stop: bool = False) -> list[str]:
+    """Search tokens: lower-case stems, stop words dropped. A hyphenated compound counts as its
+    parts, so "soap bubble" finds "soap-bubble" and "lime water" finds "lime-water"."""
     out = []
-    for m in _WORD.findall(text.lower()):
-        m = m.strip("-'")
-        if not m or (not keep_stop and m in STOP):
-            continue
-        out.append(stem(m))
+    for word in _WORD.findall(text.lower()):
+        for m in word.split("-"):
+            m = m.strip("'")
+            if not m or (not keep_stop and m in STOP):
+                continue
+            out.append(stem(m))
+    return out
+
+
+_HAS_WORD = re.compile(r"\w")
+
+
+def count_words(text: str) -> int:
+    """Words as a reader counts them: whitespace-separated tokens holding a letter or a digit, so
+    markdown markers (``##``, ``-``, ``|``, ``---``) and stray punctuation are not words."""
+    return sum(1 for w in text.split() if _HAS_WORD.search(w))
+
+
+def token_positions(text: str) -> list[tuple[int, str]]:
+    """``tokens`` with the index of the word each came from: the parts of "twenty-four" share one
+    position, so a hyphenated compound does not push its neighbours apart."""
+    out = []
+    pos = 0
+    for word in _WORD.findall(text.lower()):
+        kept = False
+        for m in word.split("-"):
+            m = m.strip("'")
+            if m and m not in STOP:
+                out.append((pos, stem(m)))
+                kept = True
+        pos += kept
     return out
 
 

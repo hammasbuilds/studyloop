@@ -14,7 +14,7 @@ import re
 from collections import Counter
 from dataclasses import dataclass, field
 
-from .textutil import raw_words, split_sentences, tokens
+from .textutil import count_words, raw_words, split_sentences, tokens
 
 HEADING = re.compile(r"^(#{1,6})[ \t]+(.+?)[ \t]*#*[ \t]*$")
 FENCE = re.compile(r"^\s*(```|~~~)")
@@ -33,7 +33,7 @@ class Para:
 
     @property
     def words(self) -> int:
-        return len(self.text.split())
+        return count_words(self.text)
 
 
 @dataclass
@@ -282,6 +282,11 @@ def segment_chapter(title: str, paras: list[Para]) -> tuple[str, list[ParsedTopi
     return shown, topics
 
 
+def _has_content(paras: list[Para]) -> bool:
+    """Any block other than a heading that holds a word (text, list, table, quote or code)."""
+    return any(p.kind != "heading" and p.words for p in paras)
+
+
 def parse_course(md: str, fallback_title: str = "Untitled") -> ParsedBook:
     heads = _headings(md)
     title = fallback_title
@@ -297,8 +302,10 @@ def parse_course(md: str, fallback_title: str = "Untitled") -> ParsedBook:
     ch_level = min(h[0] for h in heads)
     chap_idx = [i for i, h in enumerate(heads) if h[0] == ch_level]
     chapters: list[ParsedChapter] = []
+    # Text is never dropped: a short preface, a two-line chapter lead or a section that is only a
+    # list is still part of the book, and only what is inside a topic can be read, asked or quizzed.
     front = [p for p in split_blocks(md, body_start, heads[chap_idx[0]][2]) if p.kind != "heading"]
-    if sum(p.words for p in front) >= 60:
+    if _has_content(front):
         chapters.append(ParsedChapter("Introduction", [ParsedTopic("Introduction", front)]))
     for n, ci in enumerate(chap_idx):
         ctitle, c_end = heads[ci][1], heads[ci][3]
@@ -307,18 +314,18 @@ def parse_course(md: str, fallback_title: str = "Untitled") -> ParsedBook:
         subs = [i for i in range(ci + 1, nxt) if heads[i][0] == ch_level + 1]
         if not subs:
             paras = split_blocks(md, c_end + 1, region_end)
-            if any(p.kind == "text" for p in paras):
+            if _has_content(paras):
                 title_out, topics = segment_chapter(ctitle, paras)
                 chapters.append(ParsedChapter(title_out, topics))
             continue
         topics = []
         lead = [p for p in split_blocks(md, c_end + 1, heads[subs[0]][2]) if p.kind != "heading"]
-        if sum(p.words for p in lead if p.kind == "text") >= 40:
+        if _has_content(lead):
             topics.append(ParsedTopic("Overview", lead))
         for j, si in enumerate(subs):
             s_end = heads[subs[j + 1]][2] if j + 1 < len(subs) else region_end
             paras = split_blocks(md, heads[si][3] + 1, s_end)
-            if any(p.kind == "text" for p in paras):
+            if _has_content(paras):
                 topics.append(ParsedTopic(heads[si][1], paras))
         if topics:
             chapters.append(ParsedChapter(ctitle, topics))

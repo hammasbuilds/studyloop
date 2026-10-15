@@ -153,6 +153,10 @@ def _build_index() -> dict[str, str]:
                 idx.setdefault(k, eng)
         for form in ro.split():
             for k in _keys_for_roman(form):
+                # A Roman spelling's Urdu-script key can be a function word ("maye" -> the key of
+                # "ne"), which would turn every "kis ne ..." into a question about liquids.
+                if k != form and (u.is_stopword(k) or k in ROMAN_FUNCTION):
+                    continue
                 idx.setdefault(k, eng)
     return idx
 
@@ -173,12 +177,17 @@ class Analysis:
     mapped: list[dict] = field(default_factory=list)  # {"from", "to", "how"}
     ignored: list[str] = field(default_factory=list)
     intent: str | None = None
+    # Phrases the answer is likely to use although the question's own words for them are stop
+    # words ("made of" -> "composed of", "how do you make X" -> "make"). They only reorder what the
+    # terms found; they never make an unsupported question answered.
+    cues: list[str] = field(default_factory=list)
+    cue_window: int = 0  # how close (in words) a cue must sit to a term
 
     def as_dict(self) -> dict:
         return {
             "original": self.original, "language": self.language, "normalised": self.normalised,
             "terms": self.terms, "mapped": self.mapped, "ignored": self.ignored,
-            "intent": self.intent,
+            "intent": self.intent, "cues": self.cues,
         }
 
 
@@ -206,14 +215,47 @@ class Vocab:
     skeletons: dict[str, str] = field(default_factory=dict)
 
 
+COMPOSITION = re.compile(
+    r"\b(?:made|composed|consists?|consisting)\s+(?:up\s+)?of\b|\bmake\s+up\b|\bingredients?\b"
+    r"|\bkis\s+(?:cheez|chiz|cheezon|chizon)\s+(?:se|say)\s+ban|کس\s+چیز(?:وں)?\s+سے\s+بن", re.I
+)
+MAKING = re.compile(
+    r"\bhow\b.*\b(make|made|makes|produce[sd]?|prepare[sd]?|obtain(?:ed)?)\b"
+    r"|\b(?:kaise|kese|kaisay)\b.*\bban|کیسے\s+بن|بنا(?:ئی|یا|تے)", re.I
+)
+COMPOSED = ["composed of", "composed", "consists of", "consist of", "made of", "made up of",
+            "compounded of"]
+VERB_FORMS = {
+    # to make and to produce are one question ("pani kaise banta hai": how is water made/produced)
+    "make": ["make", "makes", "made", "making", "produce", "produces", "produced", "producing"],
+    "produce": ["produce", "produces", "produced", "producing", "make", "makes", "made", "making"],
+    "prepare": ["prepare", "prepared", "preparing"], "obtain": ["obtain", "obtained", "obtaining"],
+}
+
+
+def _cues(q: str) -> tuple[list[str], int]:
+    """(cue phrases, window in words). "What is X made of?" looks for "composed of" anywhere near
+    X; "how do you make X?" looks for the question's own verb right next to X ("make hydrogen")."""
+    if COMPOSITION.search(q):
+        return COMPOSED, 10
+    m = MAKING.search(q)
+    if m:
+        verb = (m.group(1) or "make").lower()
+        return VERB_FORMS[next((k for k in VERB_FORMS if verb.startswith(k[:4])), "make")], 1
+    return [], 0
+
+
 def analyse(question: str, vocab: Vocab | None = None) -> Analysis:
     vocab = vocab or Vocab()
     q = u.fix_spacing(u.normalize(question)) if URDU_LETTERS.search(question) else question
     lang = detect_language(question)
     a = Analysis(question, lang, q)
+    a.cues, a.cue_window = _cues(q)
     if lang == "en":
-        a.terms = _unique(stem(t) for t in re.findall(r"[A-Za-z][A-Za-z'\-]*", q.lower())
-                          if t not in STOP and t not in FILLER and len(t) > 1)
+        # hyphens split words, as they do in the book's index ("coal-gas" -> coal, gas)
+        a.terms = _drop_cue_verbs(a, _unique(
+            stem(t) for t in re.findall(r"[A-Za-z][A-Za-z']*", q.lower())
+            if t not in STOP and t not in FILLER and len(t) > 1))
         for w in re.findall(r"[A-Za-z]+", q.lower()):
             if w in ("why", "how", "what", "who", "when", "where"):
                 a.intent = a.intent or w
@@ -221,7 +263,7 @@ def analyse(question: str, vocab: Vocab | None = None) -> Analysis:
     toks = [
         t.strip("؟،۔؛")
         for t in re.findall(
-            r"[؀-ۿݐ-ݿﭐ-﷿ﹰ-﻿]+|[A-Za-z][A-Za-z'\-]*", q
+            r"[؀-ۿݐ-ݿﭐ-﷿ﹰ-﻿]+|[A-Za-z][A-Za-z']*", q
         )
     ]
     toks = [t for t in toks if t]
@@ -244,6 +286,8 @@ def analyse(question: str, vocab: Vocab | None = None) -> Analysis:
         if low in _QWORDS:
             a.intent = a.intent or _QWORDS[low]
             continue
+        if not is_urdu and low in ROMAN_FUNCTION:
+            continue  # "ne", "se", "ko": grammar, never a glossary word
         keys = _keys_for_urdu(tok) if is_urdu else _keys_for_roman(tok)
         hit = next((_INDEX[k] for k in keys if k in _INDEX), None)
         if hit:
@@ -269,8 +313,18 @@ def analyse(question: str, vocab: Vocab | None = None) -> Analysis:
     stems: list[str] = []
     for phrase in seen:
         stems.extend(stem(w) for w in phrase.split() if w not in STOP)
-    a.terms = _unique(stems)
+    a.terms = _drop_cue_verbs(a, _unique(stems))
     return a
+
+
+def _drop_cue_verbs(a: Analysis, terms: list[str]) -> list[str]:
+    """In "how is X made?" the verb is the cue, not a topic: searching for "produce" as well would
+    rank passages about producing anything above the one that says how X is made."""
+    if a.cue_window != 1:
+        return terms
+    verbs = {stem(w) for forms in VERB_FORMS.values() for w in forms}
+    kept = [t for t in terms if t not in verbs]
+    return kept or terms
 
 
 def book_vocab(words: list[str]) -> Vocab:

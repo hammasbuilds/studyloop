@@ -49,15 +49,21 @@ def _find_term(sent: str, term: str) -> tuple[int, int] | None:
     return (m.start(), m.end()) if m else None
 
 
+def _parts(term: str) -> list[str]:
+    """Words of a term, hyphenated compounds split: "air-pump" -> ["air", "pump"]."""
+    return [w for w in re.split(r"[\s\-]+", term.lower()) if w]
+
+
 def _distractors(concepts: list[str], answer: str, sent: str, n: int, rng: random.Random) -> list[str]:
     """Other concepts from the book that fit the blank by shape and do not occur in the sentence."""
     low = sent.lower()
-    ans_stem = stem(answer.split()[-1])
+    ans_words = {stem(w) for w in _parts(answer)}
     want = len(answer.split())
+    in_sent = {stem(x) for x in re.findall(r"[a-z]+", low)}
     pool = [
         c for c in concepts
-        if stem(c.split()[-1]) != ans_stem and c.lower() not in low
-        and not any(stem(w) in {stem(x) for x in re.findall(r"[a-z]+", low)} for w in c.split())
+        if not ans_words & {stem(w) for w in _parts(c)}  # "pump" vs "air-pump", "acid" vs "nitric acid"
+        and c.lower() not in low and not any(stem(w) in in_sent for w in _parts(c))
     ]
     plural = answer.lower().endswith("s") and not answer.lower().endswith("ss")
     shaped = [c for c in pool if (c.lower().endswith("s") and not c.lower().endswith("ss")) == plural]
@@ -111,7 +117,7 @@ def generate_for_topic(con: sqlite3.Connection, topic_id: int) -> int:
         _, a, b, (s0, s1) = best
         used.add(a)
         sent = md[a:b]
-        surface = sent[s0:s1]
+        surface = " ".join(sent[s0:s1].split())  # a hard-wrapped "oxbow<newline>lake" is "oxbow lake"
         blanked = sent[:s0] + "_____" + sent[s1:]
         accept = list(dict.fromkeys([surface.lower(), term.lower()]))
         hint = f"{surface[0]}{'·' * (len(surface) - 1)}"

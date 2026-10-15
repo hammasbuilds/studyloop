@@ -11,6 +11,7 @@ Captions are written to docs/gallery/CAPTIONS.md.
 from __future__ import annotations
 
 import http.server
+import json
 import os
 import socket
 import sqlite3
@@ -102,6 +103,7 @@ server = subprocess.Popen(
     [sys.executable, "-c", f"from studyloop.launcher import main; main(['--no-browser','--no-sample','--port','{PORT}','--db',r'{DB}'])"],
     env={**os.environ, "STUDYLOOP_HOME": str(HOME), "STUDYLOOP_ALLOW_PRIVATE_URLS": "1"},
     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
 )
 web = None
 try:
@@ -341,7 +343,7 @@ try:
         page.wait_for_selector(".topic-row")
         for path, name, cap in (
             ("notes.md", "export-notes", "Input: the Export my notes button on the book page. Output: the downloaded notes.md, shown as received: a markdown file with the book's topics and the note written above."),
-            ("flashcards.csv", "export-anki-csv", "Input: the Flashcards (CSV) button. Output: the downloaded flashcards.csv (front, back, source), ready to import into Anki: a card only for a key concept the book defines or makes the subject of a sentence, so the sample's 33,688 words give CARDS cards."),
+            ("flashcards.csv", "export-anki-csv", "Input: the Flashcards (CSV) button. Output: the downloaded flashcards.csv (front, back, source), ready to import into Anki: a card only for a key concept the book defines or makes the subject of a sentence, so the sample's WORDS words give CARDS cards."),
         ):
             with page.expect_download() as dl:
                 page.click(f"a[href$='{path}']")
@@ -350,6 +352,8 @@ try:
             f.save_as(str(tmp))
             text = tmp.read_text(encoding="utf-8-sig")
             cap = cap.replace("CARDS", str(len(text.splitlines()) - 1))
+            n_words = json.load(urllib.request.urlopen(f"{BASE}/api/books/{book_id}"))["n_words"]
+            cap = cap.replace("WORDS", f"{n_words:,}")
             import html as _h
 
             sheet = ctx.new_page()

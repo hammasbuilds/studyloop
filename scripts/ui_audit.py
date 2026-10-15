@@ -191,6 +191,7 @@ def main() -> int:  # noqa: C901 - one linear script
         [sys.executable, "-c", f"from studyloop.launcher import main; main(['--no-browser','--port','{PORT}','--db',r'{DB}'])"],
         env={**os.environ, "STUDYLOOP_HOME": str(HOME), "STUDYLOOP_ALLOW_PRIVATE_URLS": "1"},
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
     )
     try:
         for _ in range(150):
